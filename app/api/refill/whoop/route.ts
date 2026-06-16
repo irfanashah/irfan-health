@@ -106,6 +106,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Cycle metrics — strain
   for (const cycle of cycles) {
     if (cycle.score_state !== 'SCORED' || !cycle.score) continue
+    if (!cycle.start || !cycle.end) {
+      buildErrors.push(
+        `cycle_${cycle.id}_strain_score: null start/end (likely in-progress cycle)`
+      )
+      continue
+    }
     planned.push({
       source_record_id: `cycle_${cycle.id}_strain_score`,
       data_shape: 'daily_summary',
@@ -124,6 +130,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (rec.score_state !== 'SCORED' || !rec.score) continue
     const cycle = cycleMap.get(rec.cycle_id)
     if (!cycle) continue
+    if (!cycle.start || !cycle.end) {
+      buildErrors.push(
+        `recovery_${rec.cycle_id}_*: linked cycle ${rec.cycle_id} has null start/end`
+      )
+      continue
+    }
 
     const recMap: Record<string, { value: number; unit: string }> = {
       recovery_score: { value: rec.score.recovery_score, unit: 'dimensionless' },
@@ -152,6 +164,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   for (const sleep of sleeps) {
     if (sleep.nap) continue
     if (sleep.score_state !== 'SCORED' || !sleep.score) continue
+    if (!sleep.start || !sleep.end) {
+      buildErrors.push(
+        `sleep_${sleep.id}_*: null start/end (likely in-progress sleep)`
+      )
+      continue
+    }
     const stages = sleep.score.stage_summary
     const totalSleepMilli =
       stages.total_light_sleep_time_milli +
