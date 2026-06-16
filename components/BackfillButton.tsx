@@ -10,15 +10,22 @@ interface BackfillResult {
   recordsWrittenTotal: number
   recordsSkippedTotal: number
   errors?: string[]
+  mode: 'auto' | 'sweep'
 }
 
-export function BackfillButton() {
-  const [status, setStatus] = useState<
-    'idle' | 'running' | 'partial' | 'done' | 'error'
-  >('idle')
-  const [message, setMessage] = useState<string | null>(null)
+type Mode = 'auto' | 'sweep'
+type Status = 'idle' | 'running' | 'partial' | 'done' | 'error'
 
-  async function handleBackfill() {
+export function BackfillButton() {
+  const [autoStatus, setAutoStatus] = useState<Status>('idle')
+  const [autoMessage, setAutoMessage] = useState<string | null>(null)
+  const [sweepStatus, setSweepStatus] = useState<Status>('idle')
+  const [sweepMessage, setSweepMessage] = useState<string | null>(null)
+
+  async function runBackfill(mode: Mode) {
+    const setStatus = mode === 'sweep' ? setSweepStatus : setAutoStatus
+    const setMessage = mode === 'sweep' ? setSweepMessage : setAutoMessage
+
     setStatus('running')
     setMessage(null)
 
@@ -26,7 +33,7 @@ export function BackfillButton() {
       const response = await fetch('/api/backfill/whoop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ mode }),
       })
 
       if (!response.ok) {
@@ -42,7 +49,7 @@ export function BackfillButton() {
       if (result.isComplete) {
         setStatus('done')
         setMessage(
-          `Backfill complete — reached ${result.targetStartISO.slice(0, 10)}. ` +
+          `Complete — reached ${result.targetStartISO.slice(0, 10)}. ` +
             `${result.chunksRun} chunks, wrote ${result.recordsWrittenTotal}, ` +
             `skipped ${result.recordsSkippedTotal}.`
         )
@@ -60,31 +67,47 @@ export function BackfillButton() {
     }
   }
 
-  return (
-    <div className="mt-4 space-y-2">
-      <button
-        onClick={handleBackfill}
-        disabled={status === 'running'}
-        className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md text-sm font-medium disabled:opacity-50"
-      >
-        {status === 'running'
-          ? 'Backfilling…'
-          : 'Backfill Whoop to 2025-01-01'}
-      </button>
+  function colourFor(status: Status): string {
+    if (status === 'done') return 'text-accent-teal'
+    if (status === 'error') return 'text-destructive'
+    return 'text-muted-foreground'
+  }
 
-      {message && (
-        <p
-          className={`text-sm ${
-            status === 'done'
-              ? 'text-accent-teal'
-              : status === 'error'
-              ? 'text-destructive'
-              : 'text-muted-foreground'
-          }`}
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="space-y-2">
+        <button
+          onClick={() => runBackfill('auto')}
+          disabled={autoStatus === 'running' || sweepStatus === 'running'}
+          className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md text-sm font-medium disabled:opacity-50"
         >
-          {message}
+          {autoStatus === 'running'
+            ? 'Backfilling…'
+            : 'Backfill Whoop to 2025-01-01 (auto)'}
+        </button>
+        {autoMessage && (
+          <p className={`text-sm ${colourFor(autoStatus)}`}>{autoMessage}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <button
+          onClick={() => runBackfill('sweep')}
+          disabled={sweepStatus === 'running' || autoStatus === 'running'}
+          className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md text-sm font-medium disabled:opacity-50"
+        >
+          {sweepStatus === 'running'
+            ? 'Sweeping…'
+            : 'Full sweep 2025-01-01 → today (catches gaps)'}
+        </button>
+        {sweepMessage && (
+          <p className={`text-sm ${colourFor(sweepStatus)}`}>{sweepMessage}</p>
+        )}
+        <p className="text-xs text-muted-foreground/70">
+          Sweep walks the full window in 60-day chunks regardless of what's already in the DB.
+          Dedup keeps it idempotent — anything already there is counted as skipped.
         </p>
-      )}
+      </div>
     </div>
   )
 }

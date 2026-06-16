@@ -14,6 +14,13 @@ interface BackfillBody {
   targetStart?: string
   chunkDays?: number
   maxRuntimeSeconds?: number
+  // 'auto' (default) starts the frontier at the oldest existing period_start —
+  // efficient for first-time backfills.
+  // 'sweep' starts the frontier at `sweepStart` (or now) and walks back to
+  // targetStart regardless of what's already in the DB — uses dedup to catch
+  // gaps between sparse early data and the dense recent window.
+  mode?: 'auto' | 'sweep'
+  sweepStart?: string
 }
 
 interface BackfillResult {
@@ -24,6 +31,7 @@ interface BackfillResult {
   recordsWrittenTotal: number
   recordsSkippedTotal: number
   errors: string[]
+  mode: 'auto' | 'sweep'
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -45,23 +53,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const budgetMs =
     (body.maxRuntimeSeconds ?? DEFAULT_BUDGET_SECONDS) * 1000
 
+  const mode = body.mode ?? 'auto'
   const supabase = createServiceClient()
 
-  // Find the oldest existing period_start for whoop — that's the current frontier.
-  // If no data exists at all (shouldn't happen since the user just ran a first
-  // ingest, but be safe), fall back to "now" so the loop walks backwards from today.
-  const { data: oldest } = await supabase
-    .from('health_observations')
-    .select('period_start')
-    .eq('source_slug', 'whoop')
-    .order('period_start', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+  let frontier: Date
+  if (mode === 'sweep') {
+    // Walk back from now (or supplied sweepStart) to targetStart regardless of
+    // existing data. Dedup at the adapter layer makes this safe and idempotent.
+    frontier = body.sweepStart ? new Date(body.sweepStart) : new Date()
+  } else {
+    // Find the oldest existing period_start for whoop and walk backwards from there.
+    const { data: oldest } = await supabase
+      .from('health_observations')
+      .select('period_start')
+      .eq('source_slug', 'whoop')
+      .order('period_start', { ascending: true })
+      .limit(1)
+      .maybeSingle()
 
-  let frontier =
-    oldest?.period_start != null
-      ? new Date(oldest.period_start as string)
-      : new Date()
+    frontier =
+      oldest?.period_start != null
+        ? new Date(oldest.period_start as string)
+        : new Date()
+  }
 
   const startTime = Date.now()
   let chunksRun = 0
@@ -102,6 +116,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         recordsWrittenTotal,
         recordsSkippedTotal,
         errors,
+        mode,
       }
       return NextResponse.json(payload, { status: 500 })
     }
@@ -118,6 +133,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     recordsWrittenTotal,
     recordsSkippedTotal,
     errors,
+    mode,
   }
 
   return NextResponse.json(payload, { status: 200 })
