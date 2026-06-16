@@ -81,6 +81,6 @@
 ## Reference
 
 - Specs and handover docs at repo root: `slice-0-scaffold-spec.md`, `slice-1-whoop-adapter-spec.md`, `health-platform-data-model-spec_v1_2026-06-16.md`, `health-platform-handover_v1_2026-06-16.md`, `migration_001_initial_schema.sql`, `migration_002_oauth_tokens.sql`.
-- Dashboard buttons (one per route — all in `components/`): `RunNowButton` (`/api/ingest/whoop`), `RefillButton` (`/api/refill/whoop`), `BackfillButton` (`/api/backfill/whoop`, modes auto+sweep), `DiagnoseButton` (`/api/diagnose/whoop`), `ThemeToggle` (light/dark).
+- Dashboard surface: `ThemeToggle` (header), `DiagnoseButton` (only ingestion UI — proves Whoop vs DB row counts match). The other Slice-1 buttons (`RunNowButton`, `RefillButton`, `BackfillButton`) and their components are still in `components/` and wired to live API routes (`/api/ingest`, `/api/refill`, `/api/backfill`) — just no longer rendered. Cron handles routine sync; re-expose any of these by importing + rendering in `app/page.tsx` if needed for a one-off.
 - Slice 2+ specs aren't written yet — generate from the handover roadmap (§7) + data-model spec when starting.
 - Irfan's working preferences (challenge level, communication style, file safety) are in his global `~/.claude/CLAUDE.md` — they apply here, do not duplicate.
