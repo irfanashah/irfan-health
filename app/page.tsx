@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { RunNowButton } from '@/components/RunNowButton'
+import { BackfillButton } from '@/components/BackfillButton'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -47,6 +48,7 @@ export default async function DashboardPage() {
         </p>
 
         <RunNowButton />
+        <BackfillButton />
       </main>
     </div>
   )
