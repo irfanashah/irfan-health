@@ -82,10 +82,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const fresh = await ensureFreshToken(supabase, tokens)
 
+  // Widen the cycles fetch backwards by 14 days. Some recoveries inside our
+  // requested window link to cycles whose start fell just before `fromDate`
+  // (cycle ends ~midnight, recovery is scored the next morning). Without the
+  // buffer, those recoveries can't find their cycle in cycleMap and get silently
+  // dropped. We still only emit strain_score rows for cycles whose start is
+  // inside the requested window.
+  const CYCLE_BUFFER_MS = 14 * 24 * 60 * 60 * 1000
+  const cycleFetchFrom = new Date(fromDate.getTime() - CYCLE_BUFFER_MS)
+
   let cycles, recoveries, sleeps
   try {
     ;[cycles, recoveries, sleeps] = await Promise.all([
-      fetchCycles(fresh.accessToken, fromDate, toDate),
+      fetchCycles(fresh.accessToken, cycleFetchFrom, toDate),
       fetchRecoveries(fresh.accessToken, fromDate, toDate),
       fetchSleepSessions(fresh.accessToken, fromDate, toDate),
     ])
@@ -103,7 +112,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const planned: PlannedRow[] = []
   const buildErrors: string[] = []
 
-  // Cycle metrics — strain
+  // Cycle metrics — strain. Skip cycles whose start is before our window
+  // (these only exist in `cycles` due to the 14-day buffer for recovery lookup).
   for (const cycle of cycles) {
     if (cycle.score_state !== 'SCORED' || !cycle.score) continue
     if (!cycle.start || !cycle.end) {
@@ -112,6 +122,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
       continue
     }
+    if (new Date(cycle.start).getTime() < fromDate.getTime()) continue
     planned.push({
       source_record_id: `cycle_${cycle.id}_strain_score`,
       data_shape: 'daily_summary',
@@ -129,7 +140,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   for (const rec of recoveries) {
     if (rec.score_state !== 'SCORED' || !rec.score) continue
     const cycle = cycleMap.get(rec.cycle_id)
-    if (!cycle) continue
+    if (!cycle) {
+      buildErrors.push(
+        `recovery_${rec.cycle_id}_*: cycle ${rec.cycle_id} not in fetched cycles (even with 14d buffer)`
+      )
+      continue
+    }
     if (!cycle.start || !cycle.end) {
       buildErrors.push(
         `recovery_${rec.cycle_id}_*: linked cycle ${rec.cycle_id} has null start/end`
