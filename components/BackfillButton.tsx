@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+
+const SWEEP_CURSOR_KEY = 'whoop-sweep-cursor'
 
 interface BackfillResult {
   chunksRun: number
@@ -21,9 +23,24 @@ export function BackfillButton() {
   const [autoMessage, setAutoMessage] = useState<string | null>(null)
   const [sweepStatus, setSweepStatus] = useState<Status>('idle')
   const [sweepMessage, setSweepMessage] = useState<string | null>(null)
-  // Cursor for resuming sweep across clicks. Without this, every sweep click
-  // restarts from "now" and redoes the same chunks.
-  const [sweepCursor, setSweepCursor] = useState<string | null>(null)
+  // Cursor for resuming sweep across clicks AND across page refreshes/tab closes.
+  // Persisted in localStorage so the sweep can pick up where it left off — without
+  // this, every refresh restarts from "now" and re-does the recent dense window.
+  const [sweepCursor, setSweepCursorRaw] = useState<string | null>(null)
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SWEEP_CURSOR_KEY)
+    if (stored) setSweepCursorRaw(stored)
+  }, [])
+
+  function setSweepCursor(next: string | null) {
+    setSweepCursorRaw(next)
+    if (next === null) {
+      window.localStorage.removeItem(SWEEP_CURSOR_KEY)
+    } else {
+      window.localStorage.setItem(SWEEP_CURSOR_KEY, next)
+    }
+  }
 
   async function runBackfill(mode: Mode) {
     const setStatus = mode === 'sweep' ? setSweepStatus : setAutoStatus
@@ -107,23 +124,34 @@ export function BackfillButton() {
       </div>
 
       <div className="space-y-2">
-        <button
-          onClick={() => runBackfill('sweep')}
-          disabled={sweepStatus === 'running' || autoStatus === 'running'}
-          className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md text-sm font-medium disabled:opacity-50"
-        >
-          {sweepStatus === 'running'
-            ? 'Sweeping…'
-            : sweepCursor
-            ? `Continue sweep (from ${sweepCursor.slice(0, 10)})`
-            : 'Full sweep 2025-01-01 → today (catches gaps)'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => runBackfill('sweep')}
+            disabled={sweepStatus === 'running' || autoStatus === 'running'}
+            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md text-sm font-medium disabled:opacity-50"
+          >
+            {sweepStatus === 'running'
+              ? 'Sweeping…'
+              : sweepCursor
+              ? `Continue sweep (from ${sweepCursor.slice(0, 10)})`
+              : 'Full sweep 2025-01-01 → today (catches gaps)'}
+          </button>
+          {sweepCursor && sweepStatus !== 'running' && (
+            <button
+              onClick={() => setSweepCursor(null)}
+              className="px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="Discard saved cursor and start sweep from today again"
+            >
+              Reset cursor
+            </button>
+          )}
+        </div>
         {sweepMessage && (
           <p className={`text-sm ${colourFor(sweepStatus)}`}>{sweepMessage}</p>
         )}
         <p className="text-xs text-muted-foreground/70">
           Sweep walks the full window in 30-day chunks regardless of what's already in the DB.
-          Dedup keeps it idempotent — anything already there is counted as skipped.
+          Cursor is saved across refreshes — each click picks up where the last one stopped.
         </p>
       </div>
     </div>

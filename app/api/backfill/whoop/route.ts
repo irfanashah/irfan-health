@@ -13,8 +13,10 @@ const DEFAULT_TARGET_START = '2025-01-01T00:00:00.000Z'
 // round-trips well under the budget. Tuned after a 60-day sweep chunk hit
 // FUNCTION_INVOCATION_TIMEOUT on the dense recent window.
 const DEFAULT_CHUNK_DAYS = 30
-// Hard exit at 120s leaves headroom for the current chunk to finish under maxDuration.
-const DEFAULT_BUDGET_SECONDS = 120
+// Hard exit at 240s. Each sweep click can chew through more chunks; maxDuration
+// of 800s leaves comfortable room for the current chunk to finish after the
+// budget triggers a stop.
+const DEFAULT_BUDGET_SECONDS = 240
 
 interface BackfillBody {
   targetStart?: string
