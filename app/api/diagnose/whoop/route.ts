@@ -146,29 +146,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const expectedTotal = fromCycles + fromRecoveries + fromSleeps
 
   // ── Count actual rows in DB for the same window ────────────────────────────
+  //
+  // One exact-count query per metric_type, in parallel. Cheaper and more
+  // accurate than a single .select() (Supabase JS silently caps that at 1000
+  // rows by default, which gave us truncated counts in v1 of this route).
+  const allMetrics: string[] = [
+    'strain_score',
+    ...RECOVERY_METRICS,
+    ...SLEEP_METRICS,
+  ]
 
-  // Single round-trip: fetch metric_type for all whoop rows whose period_start
-  // falls in [windowStart, windowEnd]. Count in memory.
-  const { data: dbRows, error: dbError } = await supabase
-    .from('health_observations')
-    .select('metric_type')
-    .eq('source_slug', 'whoop')
-    .gte('period_start', fromDate.toISOString())
-    .lte('period_start', toDate.toISOString())
+  const counts = await Promise.all(
+    allMetrics.map(async (mt) => {
+      const { count, error } = await supabase
+        .from('health_observations')
+        .select('*', { count: 'exact', head: true })
+        .eq('source_slug', 'whoop')
+        .eq('metric_type', mt)
+        .gte('period_start', fromDate.toISOString())
+        .lte('period_start', toDate.toISOString())
 
-  if (dbError) {
-    return NextResponse.json(
-      { error: `DB count failed: ${dbError.message}` },
-      { status: 500 }
-    )
-  }
+      if (error) {
+        throw new Error(`Count for ${mt} failed: ${error.message}`)
+      }
+      return { metric_type: mt, count: count ?? 0 }
+    })
+  )
 
   const byMetricType: Record<string, number> = {}
-  for (const r of dbRows ?? []) {
-    const mt = (r as { metric_type: string }).metric_type
-    byMetricType[mt] = (byMetricType[mt] ?? 0) + 1
+  let totalForWindow = 0
+  for (const { metric_type, count } of counts) {
+    byMetricType[metric_type] = count
+    totalForWindow += count
   }
-  const totalForWindow = dbRows?.length ?? 0
 
   // ── Build comparison ──────────────────────────────────────────────────────
 
