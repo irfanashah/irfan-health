@@ -4,6 +4,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { RunNowButton } from '@/components/RunNowButton'
 import { BackfillButton } from '@/components/BackfillButton'
 import { DiagnoseButton } from '@/components/DiagnoseButton'
+import { RefillButton } from '@/components/RefillButton'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -49,6 +50,7 @@ export default async function DashboardPage() {
         </p>
 
         <RunNowButton />
+        <RefillButton />
         <BackfillButton />
         <DiagnoseButton />
       </main>
