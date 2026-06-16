@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { OAuthTokens } from '../_lib/types'
 import { saveTokens } from '../_lib/token-store'
 
-const WHOOP_API_BASE = 'https://api.prod.whoop.com/developer/v1'
+const WHOOP_API_BASE = 'https://api.prod.whoop.com/developer/v2'
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 
 export interface WhoopCycleRecord {
@@ -133,7 +133,7 @@ async function fetchAllPages<T>(
     if (!response.ok) {
       const text = await response.text()
       throw new Error(
-        `Whoop API ${endpoint} failed (${response.status}): ${text}`
+        `Whoop API ${url.pathname} failed (${response.status}): ${text.slice(0, 300)}`
       )
     }
 
