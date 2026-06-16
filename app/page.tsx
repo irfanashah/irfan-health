@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { RunNowButton } from '@/components/RunNowButton'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -44,6 +45,8 @@ export default async function DashboardPage() {
         <p className="text-muted-foreground/70 text-sm mt-2">
           Dashboard coming in Slice 7.
         </p>
+
+        <RunNowButton />
       </main>
     </div>
   )
