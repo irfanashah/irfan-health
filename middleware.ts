@@ -33,9 +33,12 @@ export async function middleware(request: NextRequest) {
 
   const isLoginPage = request.nextUrl.pathname.startsWith('/login')
   const isAuthCallback = request.nextUrl.pathname.startsWith('/auth/callback')
+  // API routes self-enforce their own auth (session / shared-secret / public).
+  // Middleware must not redirect them, or OAuth callbacks lose their `code` param.
+  const isApi = request.nextUrl.pathname.startsWith('/api')
 
-  // Not logged in and not already on login or callback → redirect to login
-  if (!user && !isLoginPage && !isAuthCallback) {
+  // Not logged in and not already on login, callback, or an API route → redirect to login
+  if (!user && !isLoginPage && !isAuthCallback && !isApi) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
