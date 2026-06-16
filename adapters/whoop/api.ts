@@ -169,5 +169,11 @@ export async function fetchSleepSessions(
   start: Date,
   end: Date
 ): Promise<WhoopSleepRecord[]> {
-  return fetchAllPages<WhoopSleepRecord>('/sleep', accessToken, start, end)
+  // Sleep is under /activity/sleep, not /sleep. (Spec was wrong.)
+  return fetchAllPages<WhoopSleepRecord>(
+    '/activity/sleep',
+    accessToken,
+    start,
+    end
+  )
 }
