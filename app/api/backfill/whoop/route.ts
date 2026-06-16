@@ -4,11 +4,17 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { whoopAdapter } from '@/adapters/whoop'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// Vercel Pro ceiling. Lets a slow chunk finish even if the wall-clock budget
+// already triggered a stop — avoids 504s mid-chunk.
+export const maxDuration = 800
 
 const DEFAULT_TARGET_START = '2025-01-01T00:00:00.000Z'
-const DEFAULT_CHUNK_DAYS = 60
-const DEFAULT_BUDGET_SECONDS = 180
+// 30 days keeps per-chunk Whoop record count + dedup SELECT-then-upsert
+// round-trips well under the budget. Tuned after a 60-day sweep chunk hit
+// FUNCTION_INVOCATION_TIMEOUT on the dense recent window.
+const DEFAULT_CHUNK_DAYS = 30
+// Hard exit at 120s leaves headroom for the current chunk to finish under maxDuration.
+const DEFAULT_BUDGET_SECONDS = 120
 
 interface BackfillBody {
   targetStart?: string
