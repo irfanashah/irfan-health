@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -20,24 +21,27 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-900">Health Platform</h1>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
-          >
-            Sign out
-          </button>
-        </form>
+    <div className="min-h-screen bg-background">
+      <header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-foreground">Health Platform</h1>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-12">
-        <p className="text-gray-500 text-sm">
+        <p className="text-muted-foreground text-sm">
           Signed in as {user.email}
         </p>
-        <p className="text-gray-400 text-sm mt-2">
+        <p className="text-muted-foreground/70 text-sm mt-2">
           Dashboard coming in Slice 7.
         </p>
       </main>

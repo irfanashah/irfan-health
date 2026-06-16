@@ -30,9 +30,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-8 text-center">
+        <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
           Health Platform
         </h1>
 
@@ -40,7 +40,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-foreground mb-1"
             >
               Email
             </label>
@@ -51,16 +51,16 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm
-                         bg-white text-gray-900
-                         focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+              className="w-full px-3 py-2 border border-input rounded-md text-sm
+                         bg-card text-foreground
+                         focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
 
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium text-foreground mb-1"
             >
               Password
             </label>
@@ -71,22 +71,22 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm
-                         bg-white text-gray-900
-                         focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+              className="w-full px-3 py-2 border border-input rounded-md text-sm
+                         bg-card text-foreground
+                         focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-destructive">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-gray-900 text-white text-sm font-medium
-                       rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-colors"
+            className="w-full py-2 px-4 bg-primary text-primary-foreground text-sm font-medium
+                       rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed
+                       transition-opacity"
           >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
