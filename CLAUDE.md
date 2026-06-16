@@ -25,7 +25,31 @@
 - Vercel Supabase URL config: add the live Vercel URL to **Supabase → Auth → URL Configuration → Site URL** + Redirect URLs (`/auth/callback`). Not blocking password login; required before any email-link / OAuth flows.
 
 ### Next concrete action
-**Start Slice 1 (ingestion + adapters).** Per the data-model and handover docs (`health-platform-data-model-spec_v1_2026-06-16.md`, `health-platform-handover_v1_2026-06-16.md`), Slice 1 introduces the first source adapter and the ingestion API routes. Confirm scope with Irfan, then plan before writing code.
+**Resume Slice 1 (Whoop adapter, end-to-end).** Scope was drafted in conversation and Irfan paused before any code was written. See "Paused — Slice 1 scope draft" below; the gate question is the first thing to settle on resume.
+
+### Paused — Slice 1 scope draft (not yet written to `slice-1-*.md`)
+
+**Goal:** prove the normalise-into-common-schema pattern end-to-end with Whoop — the cleanest source.
+
+**In scope:**
+- Apply `migration_001_initial_schema.sql` to Supabase (if not already applied) — see gate below.
+- Whoop developer-app registration + one-time OAuth handshake (tokens land in Vercel env, never in DB).
+- Shared adapter scaffolding under `adapters/_lib/`: TypeScript types from data-model spec §3 (`Adapter`, `AdapterConfig`, `IngestionResult`), the `normaliseUnit` utility with the §4 conversion table, and an `ingestion_log` helper.
+- `adapters/whoop/` implementing the §3 contract: resolve window → log pending → refresh token if needed → fetch Whoop API → map ~8 daily metrics to `health_observations` rows → upsert with §5 dedup semantics → update log with final counts/status.
+- `app/api/ingest/whoop/route.ts` — POST, shared-secret auth (`INGESTION_SECRET`), invokes adapter, returns `IngestionResult` JSON.
+- `vercel.json` cron entry: every 6 hours.
+- A single "Run now" button on the dashboard wired to the same route — for manual triggering during dev before cron is verified live.
+- Backfill from a `BACKFILL_START_DATE` constant (decide on resume — likely 2026-04-28 STEMI day, or earlier).
+
+**Out of scope** (later slices):
+- Visualising the data (Slice 7).
+- Any UI beyond the single trigger button.
+- BP, CGM, labs, manual entry, Oxylink — own slices.
+- Writing refreshed OAuth tokens back to Vercel env via the Vercel API. Slice 1 will refresh within a single invocation; persistent rotation can land as a small Slice 1.5 if manual rotation gets tedious. Decide on resume.
+
+**Gate question (blocks the rest of Slice 1):** Has `migration_001_initial_schema.sql` been applied to the Supabase project? If no → spec begins with applying it. If unsure → I can introspect via service-role key. If yes → spec starts at the Whoop OAuth setup.
+
+**Other open decisions to settle on resume:** backfill start date; Whoop OAuth app registration status (client_id/client_secret in hand?); token-rotation-back-to-Vercel automation in Slice 1 vs Slice 1.5.
 
 ## Decisions made
 
