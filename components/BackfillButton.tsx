@@ -21,6 +21,9 @@ export function BackfillButton() {
   const [autoMessage, setAutoMessage] = useState<string | null>(null)
   const [sweepStatus, setSweepStatus] = useState<Status>('idle')
   const [sweepMessage, setSweepMessage] = useState<string | null>(null)
+  // Cursor for resuming sweep across clicks. Without this, every sweep click
+  // restarts from "now" and redoes the same chunks.
+  const [sweepCursor, setSweepCursor] = useState<string | null>(null)
 
   async function runBackfill(mode: Mode) {
     const setStatus = mode === 'sweep' ? setSweepStatus : setAutoStatus
@@ -29,11 +32,16 @@ export function BackfillButton() {
     setStatus('running')
     setMessage(null)
 
+    const body: Record<string, unknown> = { mode }
+    if (mode === 'sweep' && sweepCursor) {
+      body.sweepStart = sweepCursor
+    }
+
     try {
       const response = await fetch('/api/backfill/whoop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify(body),
       })
 
       if (!response.ok) {
@@ -45,6 +53,14 @@ export function BackfillButton() {
 
       const result = (await response.json()) as BackfillResult
       const oldestDate = result.oldestReachedISO.slice(0, 10)
+
+      if (mode === 'sweep') {
+        if (result.isComplete) {
+          setSweepCursor(null)
+        } else {
+          setSweepCursor(result.oldestReachedISO)
+        }
+      }
 
       if (result.isComplete) {
         setStatus('done')
@@ -98,13 +114,15 @@ export function BackfillButton() {
         >
           {sweepStatus === 'running'
             ? 'Sweeping…'
+            : sweepCursor
+            ? `Continue sweep (from ${sweepCursor.slice(0, 10)})`
             : 'Full sweep 2025-01-01 → today (catches gaps)'}
         </button>
         {sweepMessage && (
           <p className={`text-sm ${colourFor(sweepStatus)}`}>{sweepMessage}</p>
         )}
         <p className="text-xs text-muted-foreground/70">
-          Sweep walks the full window in 60-day chunks regardless of what's already in the DB.
+          Sweep walks the full window in 30-day chunks regardless of what's already in the DB.
           Dedup keeps it idempotent — anything already there is counted as skipped.
         </p>
       </div>
