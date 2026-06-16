@@ -14,8 +14,13 @@ import {
   fetchSleepSessions,
 } from './api'
 
-/** Backfill from this date on the very first run. */
-const BACKFILL_START_DATE = new Date('2025-01-01T00:00:00.000Z')
+/**
+ * Backfill from this date on the very first run.
+ * Set to just before the 2026-04-28 STEMI to capture pre/post-event baseline
+ * while staying inside Vercel function timeout. Older history (2025 + early
+ * 2026) can be backfilled later by POSTing fromDate/toDate to /api/ingest/whoop.
+ */
+const BACKFILL_START_DATE = new Date('2026-04-15T00:00:00.000Z')
 
 const SOURCE_SLUG = 'whoop'
 
