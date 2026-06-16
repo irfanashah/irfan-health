@@ -9,11 +9,22 @@ const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
   const error = searchParams.get('error')
 
   if (error || !code) {
     return NextResponse.json(
       { error: error ?? 'No code returned from Whoop' },
+      { status: 400 }
+    )
+  }
+
+  // Verify the state parameter matches the cookie we set in /api/auth/whoop.
+  // Protects against CSRF on the OAuth callback.
+  const cookieState = request.cookies.get('whoop_oauth_state')?.value
+  if (!cookieState || !state || cookieState !== state) {
+    return NextResponse.json(
+      { error: 'OAuth state mismatch' },
       { status: 400 }
     )
   }
@@ -61,7 +72,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     new URL('/?whoop_auth=success', process.env.NEXT_PUBLIC_APP_URL!)
   )
+
+  // Clear the state cookie now that it's been used
+  response.cookies.set('whoop_oauth_state', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  })
+
+  return response
 }
