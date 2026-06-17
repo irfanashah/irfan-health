@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { LogClient } from './LogClient'
+import { fetchRecentManual } from './_lib/fetch-recent'
 
 export default async function LogPage() {
   const supabase = await createClient()
@@ -14,6 +15,8 @@ export default async function LogPage() {
   if (!user) {
     redirect('/login')
   }
+
+  const recent = await fetchRecentManual(20)
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,7 +34,7 @@ export default async function LogPage() {
       </header>
 
       <main className="max-w-md mx-auto px-4 py-6">
-        <LogClient />
+        <LogClient recent={recent} />
       </main>
     </div>
   )
