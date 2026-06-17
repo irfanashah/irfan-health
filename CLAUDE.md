@@ -80,6 +80,7 @@
 
 ### Loading patterns
 23. **Prefer ID-diff refill over chunked sweep for any "full historical load" task.** The chunked sweep approach (walk windows in N-day chunks, dedup per row via SELECT-then-upsert) is slow (~50 ms × N rows per chunk for the dedup SELECT) and error-prone (cursor management, partial timeouts, every chunk creates an `ingestion_log` row). The ID-diff pattern — fetch the full list of IDs from the source, pull existing IDs from the DB (paginated), diff in memory, batch-upsert only the missing ones — completed the entire 17-month Whoop history in ~13 s after we landed on it. Use the sweep only when memory diff is impractical (millions of records) or when the source doesn't expose stable IDs.
+24. **When you fix a row-validity filter in the refill route, back-port it to the main adapter too.** The refill route (`/api/refill/whoop`) was hardened with null-`period_start`/`period_end` filters for in-progress cycles/sleeps. The main adapter (`adapters/whoop/index.ts`) — which the cron uses — was missed initially. Every cron run silently landed as `status = 'partial'` for ~5 errors against the in-progress cycle until we noticed and ported the same filter across. The two paths share the same `health_observations` constraints; whatever the refill skips, the adapter must skip. Same rule will apply per-source going forward: `adapters/<source>/index.ts` (incremental cron) and `/api/refill/<source>/route.ts` (full-history reconciliation) must agree on what gets filtered.
 
 ## Reference
 
