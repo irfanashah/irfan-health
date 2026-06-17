@@ -100,6 +100,10 @@ export const whoopAdapter: Adapter = {
       // 5a. Cycle metrics — strain
       for (const cycle of cycles) {
         if (cycle.score_state !== 'SCORED' || !cycle.score) continue
+        // Skip in-progress cycles whose end hasn't been set yet — they'd violate
+        // chk_obs_time_coverage. The next cron run picks them up once Whoop
+        // finalises them.
+        if (!cycle.start || !cycle.end) continue
 
         const period_start = cycle.start
         const period_end = cycle.end
@@ -140,6 +144,8 @@ export const whoopAdapter: Adapter = {
 
         const cycle = cycleMap.get(rec.cycle_id)
         if (!cycle) continue
+        // Linked cycle is still in-progress (no end yet) — skip; next cron picks it up.
+        if (!cycle.start || !cycle.end) continue
 
         const period_start = cycle.start
         const period_end = cycle.end
@@ -202,6 +208,8 @@ export const whoopAdapter: Adapter = {
       for (const sleep of sleepSessions) {
         if (sleep.nap) continue
         if (sleep.score_state !== 'SCORED' || !sleep.score) continue
+        // In-progress sleep (current night still ongoing) — skip; next cron picks it up.
+        if (!sleep.start || !sleep.end) continue
 
         const period_start = sleep.start
         const period_end = sleep.end
