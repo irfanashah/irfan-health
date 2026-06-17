@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { DiagnoseButton } from '@/components/DiagnoseButton'
@@ -25,7 +26,13 @@ export default async function DashboardPage() {
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-foreground">Health Platform</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/log"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Quick log →
+          </Link>
           <ThemeToggle />
           <form action={signOut}>
             <button
