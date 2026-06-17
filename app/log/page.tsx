@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { LogClient } from './LogClient'
 
 export default async function LogPage() {
   const supabase = await createClient()
@@ -30,7 +31,7 @@ export default async function LogPage() {
       </header>
 
       <main className="max-w-md mx-auto px-4 py-6">
-        <p className="text-muted-foreground text-sm">Slice 3 stub — UI coming.</p>
+        <LogClient />
       </main>
     </div>
   )
