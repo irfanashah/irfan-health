@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/whoop",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/withings",
+      "schedule": "0 */12 * * *"
     }
   ]
 }
