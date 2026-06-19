@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/withings",
       "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/nightscout",
+      "schedule": "0 */12 * * *"
     }
   ]
 }
