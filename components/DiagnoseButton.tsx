@@ -39,6 +39,22 @@ interface WithingsDiagnoseResult {
   gap: number
 }
 
+interface NightscoutDiagnoseResult {
+  windowStart: string
+  windowEnd: string
+  nightscout: {
+    totalEntries: number
+    validSgv: number
+    skipped: {
+      nonSgv: number
+      outOfRange: number
+      missingFields: number
+    }
+  }
+  cgmRowsInDb: number
+  gap: number
+}
+
 type Status = 'idle' | 'running' | 'done' | 'error'
 
 export function DiagnoseButton() {
@@ -48,25 +64,35 @@ export function DiagnoseButton() {
   )
   const [withingsResult, setWithingsResult] =
     useState<WithingsDiagnoseResult | null>(null)
+  const [nightscoutResult, setNightscoutResult] =
+    useState<NightscoutDiagnoseResult | null>(null)
   const [whoopError, setWhoopError] = useState<string | null>(null)
   const [withingsError, setWithingsError] = useState<string | null>(null)
+  const [nightscoutError, setNightscoutError] = useState<string | null>(null)
 
   async function handleDiagnose() {
     setStatus('running')
     setWhoopResult(null)
     setWithingsResult(null)
+    setNightscoutResult(null)
     setWhoopError(null)
     setWithingsError(null)
+    setNightscoutError(null)
 
-    // Run both in parallel so one failing (e.g. Whoop rate limit) doesn't block
-    // the other panel from rendering.
-    const [whoopResp, withingsResp] = await Promise.allSettled([
+    // Parallel — a single source failing (e.g. Whoop rate limit) doesn't
+    // block the other panels from rendering.
+    const [whoopResp, withingsResp, nightscoutResp] = await Promise.allSettled([
       fetch('/api/diagnose/whoop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       }),
       fetch('/api/diagnose/withings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }),
+      fetch('/api/diagnose/nightscout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -118,6 +144,28 @@ export function DiagnoseButton() {
       anyError = true
     }
 
+    if (nightscoutResp.status === 'fulfilled') {
+      if (nightscoutResp.value.ok) {
+        try {
+          const parsed = (await nightscoutResp.value.json()) as NightscoutDiagnoseResult
+          setNightscoutResult(parsed)
+          anyOk = true
+        } catch (err) {
+          setNightscoutError(`Nightscout parse failed: ${(err as Error).message}`)
+          anyError = true
+        }
+      } else {
+        const text = await nightscoutResp.value.text().catch(() => '')
+        setNightscoutError(
+          `Nightscout HTTP ${nightscoutResp.value.status}: ${text.slice(0, 200)}`
+        )
+        anyError = true
+      }
+    } else {
+      setNightscoutError(`Nightscout fetch failed: ${nightscoutResp.reason}`)
+      anyError = true
+    }
+
     if (anyOk && anyError) setStatus('done') // partial — show what we have
     else if (anyOk) setStatus('done')
     else setStatus('error')
@@ -132,7 +180,7 @@ export function DiagnoseButton() {
       >
         {status === 'running'
           ? 'Diagnosing…'
-          : 'Diagnose sources vs DB (Whoop + Withings, 2025-01-01 → today)'}
+          : 'Diagnose sources vs DB (Whoop · Withings · Nightscout)'}
       </button>
 
       {/* Whoop panel */}
@@ -152,6 +200,15 @@ export function DiagnoseButton() {
         </div>
       )}
       {withingsResult && <WithingsPanel result={withingsResult} />}
+
+      {/* Nightscout panel */}
+      {nightscoutError && (
+        <div className="text-sm">
+          <strong className="text-foreground">Nightscout:</strong>{' '}
+          <span className="text-destructive">{nightscoutError}</span>
+        </div>
+      )}
+      {nightscoutResult && <NightscoutPanel result={nightscoutResult} />}
     </div>
   )
 }
@@ -286,6 +343,58 @@ function WithingsPanel({ result }: { result: WithingsDiagnoseResult }) {
             <li>Only pulse, no BP: {skipped.onlyPulse}</li>
             <li>Wrong attrib (objective / flagged-wrong / other): {skipped.wrongAttrib}</li>
             <li>Partial / no BP measures: {skipped.partialOrNoBp}</li>
+          </ul>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function NightscoutPanel({ result }: { result: NightscoutDiagnoseResult }) {
+  const { skipped } = result.nightscout
+  const totalSkipped = skipped.nonSgv + skipped.outOfRange + skipped.missingFields
+
+  return (
+    <div className="text-sm text-muted-foreground space-y-3 border-l-2 border-border pl-4">
+      <div className="text-foreground font-semibold">Nightscout CGM</div>
+      <div>
+        Window: {result.windowStart.slice(0, 10)} → {result.windowEnd.slice(0, 10)}{' '}
+        <span className="text-muted-foreground/70">(default: last 30 days)</span>
+      </div>
+
+      <div>
+        <strong className="text-foreground">Returned:</strong>{' '}
+        {result.nightscout.totalEntries} entries
+      </div>
+
+      <div>
+        <strong className="text-foreground">Valid sgv (40–500 mg/dL):</strong>{' '}
+        {result.nightscout.validSgv}
+      </div>
+
+      <div>
+        <strong className="text-foreground">Actual in health_observations (glucose_cgm):</strong>{' '}
+        {result.cgmRowsInDb}
+      </div>
+
+      <div>
+        <strong className="text-foreground">Gap:</strong>{' '}
+        <span
+          className={result.gap === 0 ? 'text-accent-teal' : 'text-accent-amber'}
+        >
+          {result.gap}
+        </span>
+      </div>
+
+      {totalSkipped > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-foreground">
+            Skipped breakdown ({totalSkipped})
+          </summary>
+          <ul className="ml-4 list-disc text-xs">
+            <li>Non-sgv entries: {skipped.nonSgv}</li>
+            <li>Out of range (&lt;40 / &gt;500 mg/dL — sentinels): {skipped.outOfRange}</li>
+            <li>Missing required fields: {skipped.missingFields}</li>
           </ul>
         </details>
       )}
