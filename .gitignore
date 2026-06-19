@@ -45,5 +45,4 @@ next-env.d.ts
 scratch/
 
 # local Dexcom data drops (raw exports, contain PHI — never commit).
-# Folder literally named "Dexcom " (trailing space) — escape it.
-Dexcom\ /
+Dexcom/

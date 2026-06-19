@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-17 (session: Slice 3 — manual entry + quick-log UI built end-to-end)_
+_Last updated: 2026-06-19 (session: Slice 5 — Nightscout CGM adapter built end-to-end)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-Slices 0–3 built. Whoop + Withings cron pipelines reconciled; `/log` manual-entry UI shipped locally (`npm run build` clean). No deploy yet — Slice 3 push to main is Irfan's call.
+Slices 0–3 deployed and verified; Slice 5 (Nightscout CGM adapter) built locally end-to-end with `npm run build` clean. No deploy yet — env vars (`NIGHTSCOUT_URL` + `NIGHTSCOUT_TOKEN`) and the post-deploy refill are Irfan's call.
 
 ## Slice ledger
 - ✅ Slice 0 — Scaffold (Next.js, auth, UI foundations, Vercel Pro auto-deploy)
@@ -13,21 +13,25 @@ Slices 0–3 built. Whoop + Withings cron pipelines reconciled; `/log` manual-en
 - ✅ Slice 1.6 — Refill (ID-diff full-history load)
 - ✅ Slice 2 — Withings BP adapter end-to-end (OAuth, 12-hourly cron, ID-diff refill → `bp_readings`)
 - ✅ Slice 3 — Manual entry + quick-log UI (`/log`: Weight · Glucose · Symptom · BP + always-visible Note; recent list with edit/delete; manual-only guard)
-- → Slice 4 — Oxylink SpO2 (NEXT; spec not yet written)
-- ⬜ Slice 5 CGM/Nightscout + Tidepool · 6 Labs PDF · 7 Trend dashboard + doctor-record export · 8 Discipline layer · Final wearable swap (Nov 2026)
+- ⏸ Slice 4 — Oxylink SpO2 (PARKED 2026-06-17 — ingestion path needs deeper work; see `slice-4-oxylink-ingestion-options_2026-06-17.md`)
+- ✅ Slice 5 — Nightscout agnostic CGM adapter (token auth, 12-hourly cron pulling 48 h, ID-diff refill in 30-day chunks → `glucose_cgm`, diagnose with last-30-days default)
+- ⊘ Slice 5a (Dexcom Clarity CSV import) — DEFERRED 2026-06-18; Clarity history loaded into Nightscout via the throwaway loader. Spec kept as reference (`slice-5a-dexcom-clarity-import-spec.md`).
+- → Slice 6 (Labs PDF) or Slice 7 (Trend dashboard) — NEXT, Irfan to pick. Both unblocked; both need fresh specs.
+- ⬜ Slice 8 Discipline layer · Final wearable swap (Nov 2026)
 
 ## Data state
-- **Whoop:** 5,637 rows in `health_observations` (`source_slug='whoop'`); 5-row residual gap = one in-progress cycle (`1572138504`), self-heals on next cron.
-- **Withings:** 17/17 BP readings in `bp_readings`; Diagnose gap = 0.
-- **Manual:** schema exercised locally; first production rows pending Slice-3 smoke test on Vercel.
-- **Pending verification:** first scheduled Withings `0 */12 * * *` cron tick; Slice 3 post-deploy smoke (one of each type, edit one, delete one, confirm canonical values + `ingestion_log` counts).
+- **Whoop:** `health_observations` complete — Diagnose gap = 0; 6-hourly cron running clean.
+- **Withings:** `bp_readings` complete — Diagnose gap = 0; 12-hourly cron running clean.
+- **Manual:** live on Vercel; smoke test passed.
+- **Nightscout:** ~2,995 readings sitting in Nightscout (Clarity backfill, `device='clarity-import'`); adapter not yet exercised against the DB — first refill is pending deploy + env vars.
+- **Pending verification:** post-deploy Slice 5 smoke — set Vercel env vars, run refill once, confirm `~2,995 glucose_cgm` rows for `source_slug='nightscout'`, then Diagnose gap = 0 over the last 30 days.
 
 ## Next action
-Push Slice 3 to `main`, then run the smoke test on Vercel per the spec (Step 7). Once green, draft the Slice 4 spec (Oxylink SpO2) from the handover roadmap + data-model spec — decide upload mechanism (CSV vs Apple Health vs both) up-front.
+Push Slice 5 to `main` after setting `NIGHTSCOUT_URL` + `NIGHTSCOUT_TOKEN` on Vercel (reuse `CRON_SECRET`). Then run `/api/refill/nightscout` once from the browser dev console (or re-import a refill button) to load the ~2,995 readings. Diagnose should show gap = 0 for the last 30 days. Once green, **Irfan decides Slice 6 (Labs PDF import) vs Slice 7 (Trend dashboard)** — both unblocked; both need fresh specs.
 
 ## Open items (non-blocking)
-- Slice 2 scheduled-cron tick verification.
-- Slice 3 production smoke test (post-deploy).
-- No cron failure alerting — "last successful run > 24h → notify" worth a small slice before clinical reliance.
+- **Slice 4 ingestion-path investigation** (parked) — run the two Fold device checks, decide CSV vs Health Connect bridge vs Google Health API. Full analysis in `slice-4-oxylink-ingestion-options_2026-06-17.md`.
+- **Slice 5 post-deploy verification** — env vars on Vercel, run refill once, Diagnose gap = 0.
+- No cron failure alerting — "last successful run > 24h → notify" worth a small slice before clinical reliance (now covers Whoop + Withings + Nightscout).
 - `middleware.ts` → `proxy.ts` rename (Next 16 deprecation warning only).
 - Orphan `ingestion_log` rows from timed-out runs — harmless; a `chk_status` cleanup utility someday.
