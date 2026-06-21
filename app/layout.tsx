@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Geist } from 'next/font/google'
+import { Inter, Geist, Manrope } from 'next/font/google'
 import './globals.css'
 import { cn } from '@/lib/utils'
 import { ThemeProvider } from 'next-themes'
@@ -7,6 +7,11 @@ import { ThemeProvider } from 'next-themes'
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 
 const inter = Inter({ subsets: ['latin'] })
+
+// Dashboard typeface (Slice 7.1). The dashboard.css `.app` font-family
+// references 'Manrope' explicitly; this loads the variable so it resolves
+// instead of falling through to system-ui.
+const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope' })
 
 export const metadata: Metadata = {
   title: 'Health Platform',
@@ -21,7 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn('font-sans', geist.variable)}
+      className={cn('font-sans', geist.variable, manrope.variable)}
       suppressHydrationWarning
     >
       <body className={inter.className}>
