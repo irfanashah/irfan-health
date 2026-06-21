@@ -6,6 +6,10 @@
 
 Close out this session. Do the following in order. Don't skip steps; if a step has nothing to do, say so explicitly and move on.
 
+## ⚠️ Step 0 — ONE-TIME (do this FIRST, then delete this Step 0 block)
+
+Before staging anything, add the folder `Dexcom /` (note: capital D, trailing space) to `.gitignore` so the Dexcom Clarity CSVs in it — which contain PHI (name, DOB, glucose) — are **never committed**. Confirm `git status` no longer lists that folder. Everything else accumulated this session (the `slice-*` specs, `clarity-to-nightscout-loader.py`, `nightscout-setup-guide_*.md`, `session-*` prompts, `.claude/commands`, and the `CLAUDE.md` / `PROJECT-STATE.md` doc updates) is safe to commit. Once `Dexcom /` is gitignored, remove this Step 0 block from this file — it's a one-time task.
+
 ## 1. Confirm the build is green (only if code changed this session)
 
 If any `.ts`/`.tsx`/config files changed, run `npm run build` and confirm it passes clean. If it fails, STOP — show me the error and do not commit. If only docs/markdown changed, skip this step and say so.

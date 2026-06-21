@@ -18,7 +18,8 @@ Dashboard is feature-complete. Slice 7.2 (Connections) just built locally end-to
 - ⊘ Slice 5a (Dexcom Clarity CSV import) — DEFERRED 2026-06-18
 - ✅ Slice 7.1 — Trend dashboard (baseline) — built + pushed 2026-06-19; deeper visual verification in progress
 - ✅ Slice 7.2 — Connections (Correlation Explorer + 5 cross-source views + Cardiac Readiness) — built locally 2026-06-19; not yet pushed
-- → Withings weight extension (small follow-on) — NEXT; unblocks the Weight panel + the Weight metric in the Correlation Explorer
+- 📋 Slice 7.3 — Personal Baseline & Drift Engine — **spec written 2026-06-21 (`slice-7.3-baseline-drift-spec.md`)**, all 6 decisions locked; v1 buildable independently of 7.2; `migration_004`; awaiting build approval (no code yet)
+- → Withings weight extension (small follow-on) — NEXT; unblocks the Weight panel + the Weight metric in the Correlation Explorer + Slice 7.3 weight drift
 - ⬜ Slice 6 — Labs PDF; medication-adherence + meal-logging paths; doctor-record export; Slice 8 — Discipline layer
 
 ## Data state
