@@ -10,6 +10,7 @@ import { RecoverySleepPanel } from './panels/RecoverySleepPanel'
 import { WeightPanel } from './panels/WeightPanel'
 import { QuickLogPanel } from './panels/QuickLogPanel'
 import { TimelinePanel } from './panels/TimelinePanel'
+import { ConnectionsTab } from './ConnectionsTab'
 import type { RangeId } from './thresholds'
 import type {
   DailyMetricRow,
@@ -38,15 +39,24 @@ export function DashboardClient({ series, cgm24h, latest, recent }: Props) {
   return (
     <div className="app">
       <Header range={range} onRangeChange={setRange} tab={tab} onTabChange={setTab} />
-      <main className="grid">
-        <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} />
-        <CardiacPanel series={sliced} latest={latest} />
-        <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
-        <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
-        <WeightPanel series={slicedForTrend} latest={latest} rangeDays={range} />
-        <QuickLogPanel glucoseUnit={unit} />
-        <TimelinePanel entries={recent} />
-      </main>
+      {tab === 'dashboard' ? (
+        <main className="grid">
+          <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} />
+          <CardiacPanel series={sliced} latest={latest} />
+          <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
+          <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
+          <WeightPanel series={slicedForTrend} latest={latest} rangeDays={range} />
+          <QuickLogPanel glucoseUnit={unit} />
+          <TimelinePanel entries={recent} />
+        </main>
+      ) : (
+        <ConnectionsTab
+          series={sliced}
+          cgm24h={cgm24h}
+          recent={recent}
+          glucoseUnit={unit}
+        />
+      )}
       <footer className="foot">
         <Info size={13} />
         <span>Personal health dashboard — for trends, not alarms. Not medical advice.</span>

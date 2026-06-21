@@ -81,11 +81,10 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           <Activity size={15} /> Dashboard
         </button>
         <button
-          className="tab disabled"
-          disabled
-          title="Coming in Slice 7.2"
+          className={`tab ${tab === 'correlations' ? 'active' : ''}`}
+          onClick={() => onTabChange('correlations')}
         >
-          <Sparkles size={15} /> Correlations <span className="tab-soon">soon</span>
+          <Sparkles size={15} /> Correlations
         </button>
       </nav>
     </header>
