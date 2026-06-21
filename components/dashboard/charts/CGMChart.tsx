@@ -10,6 +10,16 @@ export interface CgmDatum {
   value: number
 }
 
+/** Event marker pinned onto the 24h CGM curve (Slice 7.2 Annotated glucose). */
+export interface CgmMarker {
+  id: string
+  time: Date
+  label: string
+  detail?: string
+  kind: 'symptom' | 'note'
+  redFlag?: boolean
+}
+
 interface Props {
   data: CgmDatum[]
   lo?: number                      // target band lower bound (display units)
@@ -17,6 +27,7 @@ interface Props {
   unit?: string
   toDisplay?: (mmol: number) => number
   height?: number
+  markers?: CgmMarker[]
 }
 
 /**
@@ -31,9 +42,11 @@ export function CGMChart({
   unit = 'mmol/L',
   toDisplay = (v) => v,
   height = 240,
+  markers,
 }: Props) {
   const [ref, w] = useMeasure()
   const [hover, setHover] = useState<number | null>(null)
+  const [hoverMk, setHoverMk] = useState<number | null>(null)
   const gid = useMemo(() => 'cgm' + Math.random().toString(36).slice(2), [])
 
   if (data.length === 0) {
@@ -79,6 +92,20 @@ export function CGMChart({
     },
     [iw, n, m.left]
   )
+
+  // Map markers (by timestamp) to an x position + nearest-sample y. Out-of-window
+  // markers drop out — the panel filters before passing, but we double-check here.
+  const t0 = data[0].time.getTime()
+  const tN = data[n - 1].time.getTime()
+  const mks = (markers ?? [])
+    .map((mm) => {
+      const tt = mm.time.getTime()
+      if (tt < t0 || tt > tN) return null
+      const frac = clampN((tt - t0) / (tN - t0), 0, 1)
+      const di = Math.round(frac * (n - 1))
+      return { ...mm, x: xOf(di), gy: yOf(data[di].value), val: data[di].value }
+    })
+    .filter((mm): mm is NonNullable<typeof mm> => mm !== null)
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
@@ -131,6 +158,34 @@ export function CGMChart({
         />
         <path d={smoothPath(pts)} fill="none" stroke="var(--purple)" strokeWidth={2.2}
           strokeLinecap="round" strokeLinejoin="round" />
+        {/* event markers (symptoms / notes); red-flag stand out */}
+        {mks.map((mm, i) => {
+          const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
+          const active = hoverMk === i
+          return (
+            <g
+              key={mm.id}
+              onMouseEnter={() => setHoverMk(i)}
+              onMouseLeave={() => setHoverMk(null)}
+              style={{ cursor: 'default' }}
+            >
+              <line
+                x1={mm.x} y1={m.top} x2={mm.x} y2={m.top + ih}
+                stroke={col}
+                strokeWidth={mm.redFlag ? 1.4 : 1}
+                strokeDasharray="3 3"
+                opacity={active ? 0.85 : 0.4}
+              />
+              <circle cx={mm.x} cy={m.top} r={active ? 11 : 9} fill="var(--surface)" stroke={col} strokeWidth={1.5} />
+              {mm.redFlag ? (
+                <path d="M0 4 L5 -5 L-5 -5 Z" transform={`translate(${mm.x} ${m.top + 1})`} fill={col} />
+              ) : (
+                <circle cx={mm.x} cy={m.top} r={3.2} fill={col} />
+              )}
+              <circle cx={mm.x} cy={mm.gy} r={3} fill={col} stroke="var(--surface)" strokeWidth={1.5} />
+            </g>
+          )
+        })}
         {/* hover guide */}
         {hover !== null && (
           <g>
@@ -151,6 +206,15 @@ export function CGMChart({
           ]}
         />
       )}
+      {hoverMk !== null && mks[hoverMk] && (() => {
+        const mm = mks[hoverMk]
+        const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
+        const rows = [
+          { color: col, label: mm.label, value: `${toDisplay(mm.val)} ${unit}` },
+        ]
+        if (mm.detail) rows.push({ color: 'transparent', label: mm.detail, value: '' })
+        return <Tooltip x={mm.x} width={width} title={fmtTime(mm.time)} rows={rows} />
+      })()}
     </div>
   )
 }
