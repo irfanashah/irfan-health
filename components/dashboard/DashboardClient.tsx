@@ -8,21 +8,25 @@ import { CardiacPanel } from './panels/CardiacPanel'
 import { GlucosePanel } from './panels/GlucosePanel'
 import { RecoverySleepPanel } from './panels/RecoverySleepPanel'
 import { WeightPanel } from './panels/WeightPanel'
+import { QuickLogPanel } from './panels/QuickLogPanel'
+import { TimelinePanel } from './panels/TimelinePanel'
 import type { RangeId } from './thresholds'
 import type {
   DailyMetricRow,
   CgmPoint,
   LatestKpis,
 } from '@/app/lib/dashboard/daily-metrics'
+import type { RecentEntry } from '@/app/log/_lib/types'
 import { carryForwardWeightForTrend } from './utils'
 
 interface Props {
   series: DailyMetricRow[]      // up to 90 days, oldest first; weight column raw (not yet carry-forwarded)
   cgm24h: CgmPoint[]
   latest: LatestKpis
+  recent: RecentEntry[]
 }
 
-export function DashboardClient({ series, cgm24h, latest }: Props) {
+export function DashboardClient({ series, cgm24h, latest, recent }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
   const [tab, setTab] = useState<'dashboard' | 'correlations'>('dashboard')
@@ -40,7 +44,8 @@ export function DashboardClient({ series, cgm24h, latest }: Props) {
         <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
         <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
         <WeightPanel series={slicedForTrend} latest={latest} rangeDays={range} />
-        {/* QuickLog + Timeline land in the next commit */}
+        <QuickLogPanel glucoseUnit={unit} />
+        <TimelinePanel entries={recent} />
       </main>
       <footer className="foot">
         <Info size={13} />
