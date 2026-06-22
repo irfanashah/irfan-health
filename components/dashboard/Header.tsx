@@ -3,14 +3,16 @@
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
-import { HeartPulse, Moon, Sun, Activity, Sparkles } from 'lucide-react'
+import { HeartPulse, Moon, Sun, Activity, Sparkles, Compass } from 'lucide-react'
 import { RANGES, STEMI_DATE, type RangeId } from './thresholds'
+
+export type TabId = 'dashboard' | 'correlations' | 'baselines'
 
 interface Props {
   range: RangeId
   onRangeChange: (r: RangeId) => void
-  tab: 'dashboard' | 'correlations'
-  onTabChange: (t: 'dashboard' | 'correlations') => void
+  tab: TabId
+  onTabChange: (t: TabId) => void
 }
 
 function greeting(h: number): string {
@@ -51,7 +53,7 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           </div>
         </div>
         <div className="topbar-ctrls">
-          <Link href="/baselines" className="diag-link">Baselines</Link>
+          <Link href="/baselines" className="diag-link">Set anchor</Link>
           <Link href="/diagnostics" className="diag-link">Diagnostics</Link>
           <div className="seg range-seg">
             {RANGES.map((r) => (
@@ -86,6 +88,12 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           onClick={() => onTabChange('correlations')}
         >
           <Sparkles size={15} /> Correlations
+        </button>
+        <button
+          className={`tab ${tab === 'baselines' ? 'active' : ''}`}
+          onClick={() => onTabChange('baselines')}
+        >
+          <Compass size={15} /> Baselines &amp; drift
         </button>
       </nav>
     </header>

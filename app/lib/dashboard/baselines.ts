@@ -8,7 +8,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import {
   DRIFT_METRICS,
-  PERSISTENCE_LOOKBACK_DAYS,
   type DriftMetricId,
 } from '@/components/dashboard/drift-config'
 
@@ -70,21 +69,26 @@ function mapRow(raw: Record<string, unknown>): MetricDriftRow {
 
 /**
  * Fetch metric_drift rows bounded to the recent window the panel needs:
- *   [today - PERSISTENCE_LOOKBACK_DAYS, today]
- * Grouped by metric in the returned shape.
+ *   [today - daysBack - 1, today]
+ *
+ * `daysBack` defaults to 30 — the Baselines & drift tab redesign reads ~4
+ * weeks so the band sparkline + "X of last 14" framing have enough history.
+ * Caller can pass PERSISTENCE_LOOKBACK_DAYS for the legacy tighter window.
  *
  * The view itself scans full history (acknowledged perf caveat); this query
- * narrows down to ~14 calendar days × 8 metrics so the cost is paid only on
+ * narrows down to ~30 calendar days × 10 metrics so the cost is paid only on
  * the slice the dashboard consumes.
  */
-export async function fetchMetricDrift(): Promise<Record<DriftMetricId, MetricDriftRow[]>> {
+export async function fetchMetricDrift(
+  daysBack: number = 30
+): Promise<Record<DriftMetricId, MetricDriftRow[]>> {
   const supabase = createServiceClient()
 
   // Anchor on the GST today so the recency window aligns with daily_metrics.
   // (Asia/Dubai is fixed +04:00; using UTC-day for the cutoff is fine here
   // because we want a SUPERSET of the GST window — a row from today GST may
   // still be on yesterday UTC. Pad by one day to be safe.)
-  const cutoff = new Date(Date.now() - (PERSISTENCE_LOOKBACK_DAYS + 1) * 24 * 60 * 60 * 1000)
+  const cutoff = new Date(Date.now() - (daysBack + 1) * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10)
 

@@ -268,6 +268,89 @@
   background: var(--surface-2); border: 1px solid var(--card-border); padding: 1px 6px; border-radius: 6px;
   text-transform: uppercase; }
 
+/* ---------- Baselines & Drift (Claude Design — third top-level tab) ---------- */
+/* Ported verbatim from outputs/decoded_dashboard.html. Re-rooted on .dark / .light
+   for any media-query overrides that need theme variants; the base rules read CSS
+   variables defined above, so no [data-theme] selectors are introduced. */
+.drift-mode { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--card-border); padding: 5px 11px; border-radius: 20px; }
+.drift-mode svg { color: var(--teal); }
+.overall-read { display: flex; gap: 16px; align-items: flex-start; padding: 18px 20px; border-radius: 14px;
+  background: var(--surface-2); border: 1px solid var(--card-border); margin-bottom: 22px; }
+.overall-read.tone-calm { background: color-mix(in srgb, var(--teal) 7%, var(--surface-2)); border-color: color-mix(in srgb, var(--teal) 20%, transparent); }
+.overall-read.tone-attention { background: color-mix(in srgb, var(--amber) 6%, var(--surface-2)); border-color: color-mix(in srgb, var(--amber) 20%, transparent); }
+.overall-read.tone-safety { background: color-mix(in srgb, var(--red) 7%, var(--surface-2)); border-color: color-mix(in srgb, var(--red) 26%, transparent); }
+.overall-mark { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+  border: 1.5px solid; flex-shrink: 0; background: var(--surface); }
+.overall-title { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.overall-body { font-size: 14px; color: var(--text-muted); margin: 6px 0 0; line-height: 1.55; max-width: 720px; text-wrap: pretty; }
+
+.tier { margin-bottom: 20px; }
+.tier:last-of-type { margin-bottom: 0; }
+.tier-label { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 11px; }
+.tier-dot { width: 8px; height: 8px; border-radius: 50%; }
+.card-row { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.card-row.improvements { grid-template-columns: 1fr 1fr; }
+
+.sig-card { background: var(--surface-2); border: 1px solid var(--card-border); border-radius: 14px;
+  padding: 16px 18px; border-left: 3px solid var(--accent); }
+.sig-card.hero { background: color-mix(in srgb, var(--accent) 5%, var(--surface-2)); }
+.sig-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sig-card-id { display: flex; flex-direction: column; gap: 2px; }
+.sig-name { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
+.sig-source { font-size: 10.5px; font-weight: 600; color: var(--text-dim); }
+.sig-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700;
+  border: 1px solid; border-radius: 20px; padding: 4px 10px; white-space: nowrap; }
+.sig-pill-early { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700;
+  color: var(--text-dim); border: 1px solid var(--card-border); border-radius: 20px; padding: 3px 9px;
+  background: var(--surface); margin-left: 8px; white-space: nowrap; }
+.sig-lead { font-size: 13.5px; color: var(--text); margin: 11px 0 0; line-height: 1.5; max-width: 560px; text-wrap: pretty; }
+.sig-now { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 6px; }
+.sig-now-val { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.sig-now-unit { font-size: 13px; font-weight: 600; margin-left: 3px; opacity: 0.7; }
+.sig-now-cap { font-size: 11.5px; color: var(--text-dim); font-weight: 500; }
+.sig-expand { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: transparent;
+  border: none; color: var(--text-muted); font-weight: 700; font-size: 12px; padding: 4px 0; }
+.sig-expand:hover { color: var(--text); }
+.sig-detail { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--card-border); }
+.sig-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; }
+.sig-stat { display: flex; flex-direction: column; gap: 3px; }
+.sig-stat-k { font-size: 10.5px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.sig-stat-v { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.sig-foot { font-size: 11.5px; color: var(--text-dim); margin: 12px 0 0; line-height: 1.45; font-style: italic; }
+.sig-paused { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+  color: var(--text-dim); margin-left: 8px; }
+
+/* steady tier */
+.steady-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.steady-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--surface-2);
+  border: 1px solid var(--card-border); border-radius: 11px; padding: 9px 12px; color: var(--text-muted);
+  font-weight: 600; font-size: 12.5px; transition: all .15s; }
+.steady-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--teal) 30%, var(--card-border)); }
+.steady-chip.active { background: color-mix(in srgb, var(--teal) 8%, transparent); border-color: color-mix(in srgb, var(--teal) 40%, transparent); color: var(--text); }
+.steady-chip svg { color: var(--teal); flex-shrink: 0; }
+.steady-chip-v { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.steady-chip-v i { font-style: normal; color: var(--text-dim); font-weight: 600; font-size: 10.5px; margin-left: 2px; }
+.steady-detail { margin-top: 12px; background: var(--surface-2); border: 1px solid var(--card-border); border-radius: 12px; padding: 14px 16px; }
+.steady-detail-head { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+
+/* muted tier (settling / no-data) */
+.muted-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.muted-chip { display: flex; align-items: flex-start; gap: 10px; background: var(--surface-2);
+  border: 1px dashed var(--card-border); border-radius: 12px; padding: 12px 14px; }
+.muted-chip svg { color: var(--text-dim); flex-shrink: 0; margin-top: 1px; }
+.muted-chip > div { display: flex; flex-direction: column; gap: 2px; }
+.muted-chip-name { font-size: 13px; font-weight: 700; color: var(--text-muted); }
+.muted-chip-note { font-size: 11.5px; color: var(--text-dim); line-height: 1.4; }
+
+.drift-footnote { display: flex; align-items: flex-start; gap: 8px; margin-top: 20px; padding-top: 16px;
+  border-top: 1px solid var(--card-border); font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
+.drift-footnote svg { flex-shrink: 0; margin-top: 1px; }
+.drift-footnote b { color: var(--text-muted); font-weight: 700; }
+.drift-footnote a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+.drift-footnote a:hover { color: var(--text); }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1120px) {
   .col-7, .col-5 { grid-column: span 12; }
@@ -294,6 +377,11 @@
   .glucose-now { min-width: 0; }
   .g-now-val { font-size: 44px; }
   .glucose-tir { margin-left: 0; width: 100%; justify-content: space-between; }
+  .card-row.improvements { grid-template-columns: 1fr; }
+  .muted-chips { grid-template-columns: 1fr; }
+  .sig-stats { grid-template-columns: 1fr; }
+  .overall-read { padding: 15px 16px; gap: 13px; }
+  .overall-title { font-size: 18px; }
 }
 @media (max-width: 380px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

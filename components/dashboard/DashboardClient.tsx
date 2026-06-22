@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Info } from 'lucide-react'
-import { Header } from './Header'
+import { Header, type TabId } from './Header'
 import { TodayAtAGlance } from './panels/TodayAtAGlance'
 import { CardiacPanel } from './panels/CardiacPanel'
 import { GlucosePanel } from './panels/GlucosePanel'
@@ -10,8 +10,8 @@ import { RecoverySleepPanel } from './panels/RecoverySleepPanel'
 import { WeightPanel } from './panels/WeightPanel'
 import { QuickLogPanel } from './panels/QuickLogPanel'
 import { TimelinePanel } from './panels/TimelinePanel'
-import { BaselinesDriftPanel } from './panels/BaselinesDriftPanel'
 import { ConnectionsTab } from './ConnectionsTab'
+import { BaselinesTab } from './BaselinesTab'
 import type { RangeId } from './thresholds'
 import type {
   DailyMetricRow,
@@ -33,7 +33,7 @@ interface Props {
 export function DashboardClient({ series, cgm24h, latest, recent, baselines }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
-  const [tab, setTab] = useState<'dashboard' | 'correlations'>('dashboard')
+  const [tab, setTab] = useState<TabId>('dashboard')
 
   // Range-slice + carry-forward weight ONLY for the trend (KPI weight stays raw).
   const sliced = useMemo(() => series.slice(-range), [series, range])
@@ -42,10 +42,9 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines }: P
   return (
     <div className="app">
       <Header range={range} onRangeChange={setRange} tab={tab} onTabChange={setTab} />
-      {tab === 'dashboard' ? (
+      {tab === 'dashboard' && (
         <main className="grid">
           <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} />
-          <BaselinesDriftPanel payload={baselines} />
           <CardiacPanel series={sliced} latest={latest} />
           <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
           <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
@@ -53,7 +52,8 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines }: P
           <QuickLogPanel glucoseUnit={unit} />
           <TimelinePanel entries={recent} />
         </main>
-      ) : (
+      )}
+      {tab === 'correlations' && (
         <ConnectionsTab
           series={sliced}
           cgm24h={cgm24h}
@@ -61,6 +61,7 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines }: P
           glucoseUnit={unit}
         />
       )}
+      {tab === 'baselines' && <BaselinesTab baselines={baselines} />}
       <footer className="foot">
         <Info size={13} />
         <span>Personal health dashboard — for trends, not alarms. Not medical advice.</span>

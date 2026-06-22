@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-22 (session: SpO2 dashboard surfacing shipped — card + drift integration; migrations re-applied + pushed)_
+_Last updated: 2026-06-22 (session: Baselines & Drift redesign — moved to its own third tab, rebuilt to the Claude Design layout; engine untouched)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-Dashboard layer + file-drop ingestion + SpO2 surfacing all live. SpO2 commits pushed; migrations 003 + 004 re-applied in Supabase and verified — `daily_metrics` exposes `spo2_avg`/`spo2_min` for all 5 ingested nights (avg 96.1–96.9%, min 87–91%), and `metric_drift` now watches the two new SpO2 metrics. Pending only visual verification on Vercel.
+Baselines & Drift has moved out of the Dashboard tab into its own **third top-level tab** (Dashboard · Correlations · Baselines & drift) and is rebuilt to the Claude Design layout: overall-read band → 5 tiers (Below a safe line / Worth a look / Going the right way / Steady chips / Not reading yet) → signal cards with the BandSpark + plain-English "See the numbers" expand. **Drift engine untouched** — no view/threshold/gate change. Only data-layer change: `fetchMetricDrift` widened to 30 days. `npm run build` clean — 27 routes. Pending only visual verification on Vercel.
 
 ## Slice ledger
 - ✅ Slice 0 — Scaffold · ✅ 1 Whoop · ✅ 1.5/1.6 backfill+refill · ✅ 2 Withings BP
@@ -14,7 +14,8 @@ Dashboard layer + file-drop ingestion + SpO2 surfacing all live. SpO2 commits pu
 - ✅ Slice 7.1 — Trend dashboard (baseline)
 - ✅ Slice 7.2 — Connections (Correlation Explorer + Cardiac Readiness + cross-source views)
 - ✅ Slice 7.3 — Personal Baseline & Drift Engine
-- ✅ SpO2 dashboard surfacing (Slice 4 follow-on) — pushed 2026-06-22; migrations re-applied + data verified at the view layer
+- ✅ SpO2 dashboard surfacing (Slice 4 follow-on) — pushed 2026-06-22; migrations re-applied + data verified
+- ✅ **Slice 7.3R — Baselines & drift redesign + tab move** (Claude Design port — overall-read band + 5 tiers + BandSpark; engine untouched; `fetchMetricDrift` daysBack=30)
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose low floors; Contour parser (when sample available); Slice 6 — Labs PDF (rides file-drop pipeline); med-adherence + meal-logging paths; doctor-record export; Slice 8 — Discipline layer
 
@@ -23,12 +24,12 @@ Dashboard layer + file-drop ingestion + SpO2 surfacing all live. SpO2 commits pu
 - **Withings:** `bp_readings` complete, Diagnose gap = 0; 12-hourly cron clean. (BP only — weight extension queued.)
 - **Manual:** live on Vercel; smoke test passed.
 - **Nightscout (CGM):** `glucose_cgm` = 2,995 rows, Diagnose gap = 0 (last 30 d); 12-hourly cron live.
-- **Oxylink (overnight SpO2):** 10 rows in `health_observations` (5 nights, wake dates 2026-06-18 → 06-22; avg 96.1–96.9%, min 87–91%). File-drop pipeline live (10:00 + 21:00 GST). `daily_metrics` + `metric_drift` views verified post-migration-rerun.
-- **`daily_metrics` view:** post-SpO2 it exposes `spo2_avg`/`spo2_min` — verified.
-- **`metric_drift` view:** post-SpO2 it watches 10 metrics — verified.
+- **Oxylink (overnight SpO2):** 10 rows in `health_observations` (5 nights, wake dates 2026-06-18 → 06-22). File-drop pipeline live (10:00 + 21:00 GST).
+- **`daily_metrics` view:** exposes `spo2_avg`/`spo2_min` (verified).
+- **`metric_drift` view:** watches 10 metrics (verified). Read window widened to 30 days at the data-module layer (`fetchMetricDrift(30)`); the view itself unchanged.
 
 ## Next action
-Eyeball the deploy at `https://irfan-health.vercel.app/` once Vercel finishes: Recovery & Sleep card should show 5 nights of SpO2 (avg ~96% / min high-80s/low-90s, ≥95 band shaded, last-night readout); Baselines & Drift panel should add `spo2_avg` + `spo2_min` rows sitting `establishing` (insufficient data-days yet — they'll move to `active` as more nights accrue). Once green, the next slot is the **Withings weight extension** (small — unblocks the Weight panel + Correlation Explorer's Weight metric + Slice 7.3 weight-drift).
+Eyeball the 7.3R deploy on Vercel: the third tab **Baselines & drift** should appear between Correlations and the right-side header controls. Inside, the overall-read band reads "Holding steady" / "Still learning your normal" (anchor not set, most metrics still establishing/no-data); SpO2 + RHR/HRV may show "settling in"; BP/Glucose lean on existing data. The Dashboard tab should no longer contain the Baselines & Drift panel (the seven dashboard panels remain). Header label "Baselines" was renamed to "Set anchor" to disambiguate from the new tab; the link still goes to `/baselines`. Once green, the next slot is the **Withings weight extension** (small — unblocks the Weight panel + Correlation Explorer's Weight metric + Slice 7.3 weight-drift).
 
 ## Open items (non-blocking)
 - **Anchor population** — `/baselines` set-anchor form is built; populate post-rehab.
@@ -36,7 +37,7 @@ Eyeball the deploy at `https://irfan-health.vercel.app/` once Vercel finishes: R
 - **Withings weight extension** — small follow-on.
 - **Contour fingerstick parser** — folder + dispatch ready; parser ships when sample available.
 - **xDrip+ ongoing CGM capture** — new G7 sensor pending, then confirm one live reading lands.
-- **`daily_metrics` + `metric_drift` views both scan full history per query** — trivial at current ~3k CGM rows + 10 SpO2 rows; future perf item once CGM accrues months.
+- **`daily_metrics` + `metric_drift` views both scan full history per query** — trivial at current volume; future perf item once CGM accrues months.
 - No cron failure alerting — small slice before clinical reliance.
 - `middleware.ts` → `proxy.ts` rename (Next 16 deprecation warning only).
 - Orphan `ingestion_log` rows from timed-out runs — harmless.
