@@ -46,3 +46,6 @@ scratch/
 
 # local Dexcom data drops (raw exports, contain PHI — never commit).
 Dexcom/
+
+# local Oxylink exports used for parser testing (PHI — never commit).
+Oxylink_*.csv
