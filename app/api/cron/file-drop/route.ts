@@ -61,6 +61,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // ?probe=1 — diagnostic mode. Dumps what the service account actually sees
+  // under the root + inbox so we can debug "configured:false" without guessing
+  // at folder names. Short-circuits before any processing.
+  const url = new URL(request.url)
+  if (url.searchParams.get('probe') === '1') {
+    return await probeDriveStructure(rootId)
+  }
+
   const startedAt = Date.now()
   const supabase = createServiceClient()
 
@@ -403,3 +411,74 @@ async function writeNoopLog(
 
 // Silence unused-import warning when /api/* runs through tsc without full lints.
 void ([] as ObservationRow[])
+
+// ─── Probe (?probe=1) ──────────────────────────────────────────────────────
+//
+// Lists everything the service account can see under the root + the inbox
+// subfolders. Used to debug "configured:false" by showing literal folder
+// names (catches invisible characters, casing, duplicate folders) without
+// guessing.
+
+async function probeDriveStructure(rootId: string): Promise<NextResponse> {
+  const out: {
+    root_id: string
+    root_children: { folders: Array<{ id: string; name: string; nameBytes: number[] }>; files: Array<{ id: string; name: string }> }
+    inbox_children: { folders: Array<{ id: string; name: string; nameBytes: number[] }>; files: Array<{ id: string; name: string }> } | null
+    source_lookups: Array<{ slug: string; sourceFolder: string; found_id: string | null }>
+    error?: string
+  } = {
+    root_id: rootId,
+    root_children: { folders: [], files: [] },
+    inbox_children: null,
+    source_lookups: [],
+  }
+
+  try {
+    const rootFolders = await listFolderChildren(rootId, { mimeFilter: 'folder' })
+    const rootFiles = await listFolderChildren(rootId, { mimeFilter: 'file' })
+    out.root_children.folders = rootFolders.map((f) => ({ id: f.id, name: f.name, nameBytes: nameToBytes(f.name) }))
+    out.root_children.files = rootFiles.map((f) => ({ id: f.id, name: f.name }))
+
+    // ALL inbox candidates (including any duplicates).
+    const inboxCandidates = rootFolders.filter((f) => f.name === 'inbox')
+    if (inboxCandidates.length === 0) {
+      out.error = `No folder literally named 'inbox' under root. Check root_children.folders for what's actually there.`
+      return NextResponse.json(out, { status: 200 })
+    }
+    if (inboxCandidates.length > 1) {
+      out.error = `Multiple folders named 'inbox' under root (${inboxCandidates.length}) — the cron picks one at random. Delete the dupes.`
+    }
+
+    // Probe each inbox candidate's children (just take the first for the
+    // primary view; if there are dupes the error above flags it).
+    const inboxId = inboxCandidates[0].id
+    const inboxFolders = await listFolderChildren(inboxId, { mimeFilter: 'folder' })
+    const inboxFiles = await listFolderChildren(inboxId, { mimeFilter: 'file' })
+    out.inbox_children = {
+      folders: inboxFolders.map((f) => ({ id: f.id, name: f.name, nameBytes: nameToBytes(f.name) })),
+      files: inboxFiles.map((f) => ({ id: f.id, name: f.name })),
+    }
+
+    // What does the same name-match the cron uses return for each parser?
+    for (const slug of FILE_DROP_SOURCE_SLUGS) {
+      const parser = FILE_DROP_PARSERS[slug]
+      const match = inboxFolders.find((f) => f.name === parser.sourceFolder)
+      out.source_lookups.push({
+        slug,
+        sourceFolder: parser.sourceFolder,
+        found_id: match?.id ?? null,
+      })
+    }
+  } catch (err) {
+    out.error = `probe failed: ${(err as Error).message}`
+  }
+
+  return NextResponse.json(out, { status: 200 })
+}
+
+/** Render each character of a name as its codepoint, so invisible chars surface. */
+function nameToBytes(name: string): number[] {
+  const out: number[] = []
+  for (const ch of name) out.push(ch.codePointAt(0)!)
+  return out
+}
