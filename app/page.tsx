@@ -6,6 +6,7 @@ import {
   fetchCgm24h,
   fetchLatestKpis,
 } from '@/app/lib/dashboard/daily-metrics'
+import { fetchBaselinesPayload } from '@/app/lib/dashboard/baselines'
 import { fetchRecentManual } from '@/app/log/_lib/fetch-recent'
 import './dashboard.css'
 
@@ -23,12 +24,23 @@ export default async function DashboardPage() {
   // a re-fetch. CGM 24h is its own raw pull (~288 rows). Latest KPIs are the
   // most recent of each metric (BP, weight, sleep, etc.) — independent of range.
   // Recent manual entries reuse Slice 3's fetcher for the Timeline panel.
-  const [series, cgm24h, recent] = await Promise.all([
+  // Baselines payload (Slice 7.3) is its own bounded pull off metric_drift +
+  // context_periods + anchor_sets + med_changes (4 parallel sub-queries).
+  const [series, cgm24h, recent, baselines] = await Promise.all([
     fetchDailyMetrics(90),
     fetchCgm24h(),
     fetchRecentManual(20),
+    fetchBaselinesPayload(),
   ])
   const latest = await fetchLatestKpis(cgm24h)
 
-  return <DashboardClient series={series} cgm24h={cgm24h} latest={latest} recent={recent} />
+  return (
+    <DashboardClient
+      series={series}
+      cgm24h={cgm24h}
+      latest={latest}
+      recent={recent}
+      baselines={baselines}
+    />
+  )
 }
