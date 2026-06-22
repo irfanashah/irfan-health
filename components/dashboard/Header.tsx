@@ -51,6 +51,7 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           </div>
         </div>
         <div className="topbar-ctrls">
+          <Link href="/baselines" className="diag-link">Baselines</Link>
           <Link href="/diagnostics" className="diag-link">Diagnostics</Link>
           <div className="seg range-seg">
             {RANGES.map((r) => (
