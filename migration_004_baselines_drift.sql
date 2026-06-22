@@ -114,6 +114,42 @@ CREATE INDEX IF NOT EXISTS idx_med_active_date
 
 
 -- ============================================================
+-- Row Level Security
+-- All four tables hold app data/config (anchor history, context flags,
+-- med-change reset markers) — read+written by the dashboard + server
+-- actions, NOT secrets. Match the data-table pattern from migration_001
+-- (`authenticated_full_access`), NOT the deny_all pattern oauth_tokens
+-- uses for credentials. Idempotent: DROP POLICY IF EXISTS before CREATE.
+--
+-- The metric_drift view inherits security from the underlying tables
+-- (daily_metrics + the four above) — no separate policy needed. The
+-- service client used by the dashboard data module bypasses RLS by
+-- design, same as the daily_metrics surface.
+-- ============================================================
+
+ALTER TABLE anchor_sets           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE anchor_baseline_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE context_periods       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE med_changes           ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON anchor_sets;
+CREATE POLICY "authenticated_full_access" ON anchor_sets
+  FOR ALL USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON anchor_baseline_stats;
+CREATE POLICY "authenticated_full_access" ON anchor_baseline_stats
+  FOR ALL USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON context_periods;
+CREATE POLICY "authenticated_full_access" ON context_periods
+  FOR ALL USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "authenticated_full_access" ON med_changes;
+CREATE POLICY "authenticated_full_access" ON med_changes
+  FOR ALL USING (auth.role() = 'authenticated');
+
+
+-- ============================================================
 -- metric_drift — the computation view
 --
 -- Per (date, metric) row emits everything the TS layer needs:
@@ -300,12 +336,8 @@ ORDER BY p.date, p.metric;
 
 
 -- ============================================================
--- RLS / access:
--- All 4 tables + the view sit alongside the existing RLS-protected
--- daily_metrics surface. Slice 7.3's data module reads via the service
--- client (bypasses RLS); write paths (set anchor, exclude today, add
--- context/med-change rows) go through session-authenticated server
--- actions and also use the service client. No new RLS policies needed
--- against the schema's single-user model — adopt RLS lockdown when
--- multi-user ever lands.
+-- See the RLS block above (after the table definitions, before the view)
+-- for the authenticated_full_access policies on the four new tables.
+-- The view inherits security from the underlying tables; service-client
+-- reads bypass RLS by design (same pattern as daily_metrics).
 -- ============================================================
