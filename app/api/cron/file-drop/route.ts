@@ -73,9 +73,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const supabase = createServiceClient()
 
   // Resolve subfolder ids once for this cron invocation (decision #1).
+  // Pass {slug, folderName} pairs — Oxylink's slug 'oxylink_csv' differs from
+  // its Drive folder name 'oxylink'.
+  const sourceSpecs = FILE_DROP_SOURCE_SLUGS.map((slug) => ({
+    slug,
+    folderName: FILE_DROP_PARSERS[slug].sourceFolder,
+  }))
   let structure
   try {
-    structure = await resolveRootStructure(rootId, FILE_DROP_SOURCE_SLUGS)
+    structure = await resolveRootStructure(rootId, sourceSpecs)
   } catch (err) {
     return NextResponse.json(
       { error: `Drive root structure resolution failed: ${(err as Error).message}` },

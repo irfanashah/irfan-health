@@ -186,20 +186,31 @@ export interface RootStructure {
   bySource: Record<string, SourceFolders>
 }
 
+export interface SourceFolderSpec {
+  /** Slug used in DB + ingestion_log (e.g. 'oxylink_csv'). */
+  slug: string
+  /** Drive subfolder name under inbox/processed/failed (e.g. 'oxylink'). */
+  folderName: string
+}
+
 /**
- * Resolve the inbox/<source>/, processed/<source>/, failed/<source>/ folder
- * ids for each registered source under the root. Done ONCE per cron
+ * Resolve the inbox/<folderName>/, processed/<folderName>/, failed/<folderName>/
+ * folder ids for each registered source under the root. Done ONCE per cron
  * invocation (cron's lifetime ≈ minutes — robust to folder renames between
  * runs without an env var pin).
  *
- * Auto-creates processed/<source>/ and failed/<source>/ if absent.
+ * IMPORTANT: the folder name CAN differ from the slug. Oxylink's slug is
+ * 'oxylink_csv' but its Drive folder is just 'oxylink'. Always look up by
+ * folderName; key the result by slug.
  *
- * If inbox/<source>/ is absent, the source is reported as unconfigured
+ * Auto-creates processed/<folderName>/ and failed/<folderName>/ if absent.
+ *
+ * If inbox/<folderName>/ is absent, the source is reported as unconfigured
  * (no inbox = nothing to process; the cron skips it rather than failing).
  */
 export async function resolveRootStructure(
   rootId: string,
-  sourceSlugs: readonly string[]
+  sources: readonly SourceFolderSpec[]
 ): Promise<RootStructure> {
   // Resolve inbox/, processed/, failed/ at the root level (auto-create the
   // last two — they may not exist on first run).
@@ -214,13 +225,13 @@ export async function resolveRootStructure(
   }
 
   const bySource: Record<string, SourceFolders> = {}
-  for (const slug of sourceSlugs) {
-    const sourceInbox = await findSubfolder(slug, inboxId)
+  for (const src of sources) {
+    const sourceInbox = await findSubfolder(src.folderName, inboxId)
     if (!sourceInbox) continue  // source not yet configured — cron skips it
-    bySource[slug] = {
+    bySource[src.slug] = {
       inbox: sourceInbox,
-      processed: await findOrCreateSubfolder(slug, processedId),
-      failed:    await findOrCreateSubfolder(slug, failedId),
+      processed: await findOrCreateSubfolder(src.folderName, processedId),
+      failed:    await findOrCreateSubfolder(src.folderName, failedId),
     }
   }
 
