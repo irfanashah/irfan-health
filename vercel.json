@@ -11,6 +11,14 @@
     {
       "path": "/api/cron/nightscout",
       "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/file-drop",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/file-drop",
+      "schedule": "0 17 * * *"
     }
   ]
 }
