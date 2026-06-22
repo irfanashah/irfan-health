@@ -1,6 +1,8 @@
 // Calm status thresholds — ported VERBATIM from prototype-src/04-app.jsx `st.*`.
 // Intentionally generous on the "watch" band; nothing here is medical advice.
 
+import type { DriftMetricId } from './drift-config'
+
 export type Status = 'good' | 'watch' | 'concern' | 'neutral'
 
 export const STATUS_COLOR: Record<Status, string> = {
@@ -34,6 +36,15 @@ export const st = {
   rhr: (v: number | null): Status => {
     if (v === null) return 'neutral'
     return v <= 68 ? 'good' : v <= 75 ? 'watch' : 'concern'
+  },
+  /**
+   * Overnight SpO2 display band (Recovery & Sleep card).
+   * Calm display only; the drift panel's clinical pill uses LOW_FLOORS.
+   * ≥ 94 good · 90–93 watch · < 90 concern. Provisional, not medical advice.
+   */
+  spo2: (v: number | null): Status => {
+    if (v === null) return 'neutral'
+    return v >= 94 ? 'good' : v >= 90 ? 'watch' : 'concern'
   },
 }
 
@@ -78,14 +89,25 @@ export interface LowFloor {
 }
 
 /**
- * Bradycardia / hypotension floors. ALL provisional pending Dr. Jose.
- * Buffer values are conservative first-pass defaults — wide enough to go
- * neutral before any genuine drift toward the floor reaches the cliff.
+ * Low-side clinical floors. ALL provisional pending Dr. Jose. Buffer values
+ * are conservative first-pass defaults — wide enough to go neutral before any
+ * genuine drift toward the floor reaches the cliff.
+ *
+ * Typed Partial<Record<DriftMetricId, LowFloor>> so the drift evaluator can
+ * look up by any DriftMetricId without per-call casts. Used by both the
+ * Baselines & Drift panel (clinical-low pill) and the win-demotion rule in
+ * drift/evaluate.ts.
  */
-export const LOW_FLOORS: Partial<Record<'rhr' | 'sys' | 'dia', LowFloor>> = {
+export const LOW_FLOORS: Partial<Record<DriftMetricId, LowFloor>> = {
   rhr: { floor: 50, cautionBuffer: 4, unit: 'bpm',  label: 'Resting HR low (bradycardia)' },   // textbook is <60; beta-blocked runs low — provisional <50
   sys: { floor: 90, cautionBuffer: 5, unit: 'mmHg', label: 'Systolic low (hypotension)' },     // provisional <90
   dia: { floor: 60, cautionBuffer: 4, unit: 'mmHg', label: 'Diastolic low' },                  // <60 dia compromises coronary perfusion — provisional pending Dr. Jose
+  // SpO2 floors — provisional pending Dr. Jose. SpO2 < 90% is the conventional
+  // hypoxemia line; healthy overnight average sits ≥ 94–95%, and brief dips
+  // into the high-80s on the nightly minimum are common in mild sleep-
+  // disordered breathing. Conservative starting points.
+  spo2_avg: { floor: 92, cautionBuffer: 2, unit: '%', label: 'Overnight SpO2 average low' },
+  spo2_min: { floor: 88, cautionBuffer: 3, unit: '%', label: 'Overnight SpO2 min low (desaturation)' },
 }
 
 /** Footer label shown wherever the LOW_FLOORS render a verdict. */

@@ -39,6 +39,10 @@
 --                                 sensor's native cadence), so count% ≈ time%.
 --                                 If we ever ingest a non-uniform source, this
 --                                 needs to switch to a time-weighted calc.
+--   spo2_avg       Oxylink daily_summary, period_end attribution (wake-day).
+--                                 Overnight average SpO2, canonical %.
+--   spo2_min       Oxylink daily_summary, period_end attribution (wake-day).
+--                                 Overnight minimum SpO2, canonical %.
 -- ============================================================
 
 
@@ -192,6 +196,30 @@ cgm_stats AS (
   WHERE metric_type = 'glucose_cgm'
     AND recorded_at IS NOT NULL
   GROUP BY (recorded_at AT TIME ZONE 'Asia/Dubai')::date
+),
+
+-- ----------------------------------------------------------------
+-- 8. Oxylink overnight SpO2. Modelled on whoop_daily — wake-day
+--    attribution via (period_end AT TIME ZONE 'Asia/Dubai')::date so
+--    each night's SpO2 lands on the SAME daily_metrics row as that
+--    night's recovery/sleep (they line up).
+--    Source: health_observations source_slug='oxylink_csv'
+--            data_shape='daily_summary'
+--            metric_type ∈ {spo2_overnight_avg, spo2_overnight_min}
+--    Unit: % (canonical). Both rows per night share period_end so the
+--    GROUP BY + FILTER pattern collapses them cleanly.
+-- ----------------------------------------------------------------
+spo2_daily AS (
+  SELECT
+    (period_end AT TIME ZONE 'Asia/Dubai')::date AS date,
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_avg') AS spo2_avg,
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_min') AS spo2_min
+  FROM health_observations
+  WHERE source_slug = 'oxylink_csv'
+    AND data_shape  = 'daily_summary'
+    AND period_end IS NOT NULL
+    AND metric_type IN ('spo2_overnight_avg','spo2_overnight_min')
+  GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date
 )
 
 SELECT
@@ -204,7 +232,8 @@ SELECT
   cf.fasting,
   cs.glucose_var,
   cs.tir,
-  cs.cgm_count
+  cs.cgm_count,
+  sp.spo2_avg, sp.spo2_min
 FROM date_series ds
 LEFT JOIN bp_daily     bp ON bp.date = ds.date
 LEFT JOIN weight_daily w  ON w.date  = ds.date
@@ -212,6 +241,7 @@ LEFT JOIN whoop_daily  wh ON wh.date = ds.date
 LEFT JOIN sleep_daily  sl ON sl.date = ds.date
 LEFT JOIN cgm_fasting  cf ON cf.date = ds.date
 LEFT JOIN cgm_stats    cs ON cs.date = ds.date
+LEFT JOIN spo2_daily   sp ON sp.date = ds.date
 ORDER BY ds.date;
 
 

@@ -96,10 +96,13 @@ export async function fetchMetricDrift(): Promise<Record<DriftMetricId, MetricDr
 
   if (error) throw new Error(`metric_drift fetch failed: ${error.message}`)
 
-  const grouped: Record<DriftMetricId, MetricDriftRow[]> = {
-    rhr: [], hrv: [], sys: [], dia: [],
-    fasting: [], glucose_var: [], tir: [], weight: [],
-  }
+  // Build the grouped initialiser from DRIFT_METRICS so adding a new metric to
+  // the config auto-propagates here (vs. a hand-written literal we'd have to
+  // remember to extend — caught the SpO2 add-on, see gotcha "build maps from
+  // DRIFT_METRICS, not literals").
+  const grouped = Object.fromEntries(
+    DRIFT_METRICS.map((m) => [m, [] as MetricDriftRow[]])
+  ) as Record<DriftMetricId, MetricDriftRow[]>
   for (const r of data ?? []) {
     const row = mapRow(r as Record<string, unknown>)
     if (DRIFT_METRICS.includes(row.metric)) {

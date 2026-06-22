@@ -32,6 +32,8 @@ export interface DailyMetricRow {
   glucose_var: number | null         // mmol/L stddev
   tir: number | null                 // %
   cgm_count: number | null           // readings that day
+  spo2_avg: number | null            // %  (Oxylink overnight average)
+  spo2_min: number | null            // %  (Oxylink overnight minimum)
 }
 
 // Postgres `numeric` round-trips as string through PostgREST — coerce
@@ -63,6 +65,8 @@ function mapDailyRow(raw: Record<string, unknown>): DailyMetricRow {
     glucose_var: n(raw.glucose_var as number | string | null),
     tir: n(raw.tir as number | string | null),
     cgm_count: n(raw.cgm_count as number | string | null),
+    spo2_avg: n(raw.spo2_avg as number | string | null),
+    spo2_min: n(raw.spo2_min as number | string | null),
   }
 }
 
@@ -85,7 +89,7 @@ export async function fetchDailyMetrics(days: number): Promise<DailyMetricRow[]>
   const { data, error } = await supabase
     .from('daily_metrics')
     .select(
-      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count'
+      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min'
     )
     .gte('date', cutoff)
     .order('date', { ascending: true })
@@ -159,6 +163,8 @@ export interface LatestKpis {
   strain: { value: number; at: string } | null
   sleep: { total: number; performance: number | null; at: string } | null
   cgm: { value: number; at: string; trendDir: 'rising' | 'falling' | 'flat'; slope: number } | null
+  /** Most recent overnight Oxylink reading — avg + min from the same night. */
+  spo2: { avg: number; min: number; at: string } | null
 }
 
 async function latestObs(
@@ -249,6 +255,11 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
     cgm = { value: last.mmol, at: last.time, trendDir, slope }
   }
 
+  // Latest overnight SpO2 — pulls the two rows from the most recent night
+  // (avg + min share the same period_end). These rows have NO recorded_at;
+  // we use period_end as the timestamp.
+  const spo2 = await latestSpo2(supabase)
+
   return {
     weight: weightRow,
     bp,
@@ -258,5 +269,33 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
     strain: strainRow,
     sleep,
     cgm,
+    spo2,
   }
+}
+
+async function latestSpo2(
+  supabase: ReturnType<typeof createServiceClient>
+): Promise<LatestKpis['spo2']> {
+  const { data, error } = await supabase
+    .from('health_observations')
+    .select('metric_type, canonical_value, period_end')
+    .eq('source_slug', 'oxylink_csv')
+    .in('metric_type', ['spo2_overnight_avg', 'spo2_overnight_min'])
+    .not('period_end', 'is', null)
+    .order('period_end', { ascending: false })
+    .limit(2)
+  if (error || !data || data.length < 2) return null
+  const rows = data as Array<{ metric_type: string; canonical_value: number | string; period_end: string }>
+  // The two rows for the same night share period_end; pick the latest distinct
+  // period_end (top-2 by DESC order WILL be the same night if both rows exist).
+  const latestPeriodEnd = rows[0].period_end
+  let avg: number | null = null
+  let min: number | null = null
+  for (const r of rows) {
+    if (r.period_end !== latestPeriodEnd) continue
+    if (r.metric_type === 'spo2_overnight_avg') avg = n(r.canonical_value)
+    if (r.metric_type === 'spo2_overnight_min') min = n(r.canonical_value)
+  }
+  if (avg === null || min === null) return null
+  return { avg, min, at: latestPeriodEnd }
 }

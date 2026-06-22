@@ -189,7 +189,7 @@ CREATE POLICY "authenticated_full_access" ON med_changes
 CREATE OR REPLACE VIEW metric_drift AS
 
 WITH
--- 1. Unpivot daily_metrics into long form for the 8 v1 metrics.
+-- 1. Unpivot daily_metrics into long form for the 10 metrics (8 v1 + 2 SpO2).
 --    NULL values are excluded by design — only real readings flow through.
 long_form AS (
   SELECT date, 'rhr'         AS metric, rhr::numeric         AS value FROM daily_metrics WHERE rhr         IS NOT NULL
@@ -200,6 +200,8 @@ long_form AS (
   UNION ALL SELECT date, 'glucose_var', glucose_var::numeric         FROM daily_metrics WHERE glucose_var IS NOT NULL
   UNION ALL SELECT date, 'tir',         tir::numeric                 FROM daily_metrics WHERE tir         IS NOT NULL
   UNION ALL SELECT date, 'weight',      weight::numeric              FROM daily_metrics WHERE weight      IS NOT NULL
+  UNION ALL SELECT date, 'spo2_avg',    spo2_avg::numeric            FROM daily_metrics WHERE spo2_avg    IS NOT NULL
+  UNION ALL SELECT date, 'spo2_min',    spo2_min::numeric            FROM daily_metrics WHERE spo2_min    IS NOT NULL
 ),
 
 -- 2. Latest active med-change date per metric (window-start reset floor).

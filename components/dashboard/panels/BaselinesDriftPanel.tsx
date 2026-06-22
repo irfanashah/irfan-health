@@ -206,7 +206,7 @@ function BaselineRow({ verdict }: { verdict: DriftVerdict }) {
               padding: '3px 10px',
             }}
           >
-            <AlertTriangle size={12} /> {LOW_FLOORS[cfg.id as 'rhr' | 'sys' | 'dia']?.label ?? 'Below clinical floor'}
+            <AlertTriangle size={12} /> {LOW_FLOORS[cfg.id]?.label ?? 'Below clinical floor'}
           </span>
         )}
         {verdict.clinicalLow === 'caution' && (

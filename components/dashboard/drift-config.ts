@@ -14,6 +14,7 @@ export type DriftMetricId =
   | 'sys' | 'dia'
   | 'fasting' | 'glucose_var' | 'tir'
   | 'weight'
+  | 'spo2_avg' | 'spo2_min'
 
 export type ConcerningDirection = 'up' | 'down'
 
@@ -71,11 +72,20 @@ export interface DriftMetricConfig {
 //   glucose_var  ↑  yes  |  ≥ 0.4 mmol  ≥ 0.8  | 3 / 7
 //   tir          ↓  yes  |  ≥ 8 pts     ≥ 0.8  | 3 / 7
 //   weight       ↑  yes  |  ≥ 1.2 kg    ≥ 1.0  | 5 / 10
+//   spo2_avg     ↓  no   |  ≥ 1.5 %     ≥ 1.0  | 5 / 12
+//   spo2_min     ↓  no   |  ≥ 3.0 %     ≥ 1.0  | 5 / 12
 //
-// HRV/weight carry the higher z-floor (HRV noisy; weight low-variance).
+// HRV/weight/spo2 carry the higher z-floor (HRV noisy; weight low-variance;
+// spo2_min in particular has nightly variability from sensor contact).
 // Weight min-n short = 5 reconciles to the ~5-of-7 weigh-in cadence; until
 // the Withings-weight extension lands + you weigh ~5/7 days it stays
 // `establishing` (expected).
+//
+// SpO2 acknowledgeGood=false (provisional, pending Dr. Jose): SpO2 is bounded
+// at 100 and Irfan already sits high — upward drift near the ceiling isn't a
+// physiological "win" the way HRV-up or weight-down is. The signal that
+// matters is downward (nocturnal desaturation). RHR-down is the same class of
+// "not a fitness win for this patient" call.
 
 export const DRIFT_CONFIG: Record<DriftMetricId, DriftMetricConfig> = {
   rhr:         { id: 'rhr',         label: 'Resting HR',           short: 'RHR',        unit: 'bpm',    concerning: 'up',   acknowledgeGood: false, absFloor: 4,   zFloor: 0.8, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
@@ -86,10 +96,13 @@ export const DRIFT_CONFIG: Record<DriftMetricId, DriftMetricConfig> = {
   glucose_var: { id: 'glucose_var', label: 'Glucose variability',  short: 'Glucose var',unit: 'mmol/L', concerning: 'up',   acknowledgeGood: true,  absFloor: 0.4, zFloor: 0.8, minNShort: 3, minNPrior: 7,  shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
   tir:         { id: 'tir',         label: 'Time-in-range',        short: 'TIR',        unit: '%',      concerning: 'down', acknowledgeGood: true,  absFloor: 8,   zFloor: 0.8, minNShort: 3, minNPrior: 7,  shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
   weight:      { id: 'weight',      label: 'Weight',               short: 'Weight',     unit: 'kg',     concerning: 'up',   acknowledgeGood: true,  absFloor: 1.2, zFloor: 1.0, minNShort: 5, minNPrior: 10, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
+  spo2_avg:    { id: 'spo2_avg',    label: 'Overnight SpO2 (avg)', short: 'SpO2 avg',   unit: '%',      concerning: 'down', acknowledgeGood: false, absFloor: 1.5, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
+  spo2_min:    { id: 'spo2_min',    label: 'Overnight SpO2 (min)', short: 'SpO2 min',   unit: '%',      concerning: 'down', acknowledgeGood: false, absFloor: 3.0, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
 }
 
 export const DRIFT_METRICS: readonly DriftMetricId[] = [
   'rhr', 'hrv', 'sys', 'dia', 'fasting', 'glucose_var', 'tir', 'weight',
+  'spo2_avg', 'spo2_min',
 ]
 
 /**

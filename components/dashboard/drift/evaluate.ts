@@ -166,7 +166,7 @@ export function evaluateMetric(
       shiftConcerning: null,
       shiftDelta: null,
       shiftZ: null,
-      clinicalLow: clinicalLowState(latest.today_value, LOW_FLOORS[metric as 'rhr' | 'sys' | 'dia']),
+      clinicalLow: clinicalLowState(latest.today_value, LOW_FLOORS[metric]),
       alertsSuppressed,
       suppressedBy,
       medReset,
@@ -214,10 +214,7 @@ export function evaluateMetric(
   }
 
   const shiftConcerning = shiftDelta === null ? null : shiftDirectionConcerning(shiftDelta, cfg)
-  const clinicalLow = clinicalLowState(
-    latest.today_value,
-    LOW_FLOORS[metric as 'rhr' | 'sys' | 'dia']
-  )
+  const clinicalLow = clinicalLowState(latest.today_value, LOW_FLOORS[metric])
 
   // Tier decision:
   //   - drift = held ≥ M data-days AND the latest shift is in the concerning
