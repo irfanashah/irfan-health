@@ -7,6 +7,7 @@ import { TodayAtAGlance } from './panels/TodayAtAGlance'
 import { CardiacPanel } from './panels/CardiacPanel'
 import { GlucosePanel } from './panels/GlucosePanel'
 import { RecoverySleepPanel } from './panels/RecoverySleepPanel'
+import { OvernightOxygenPanel } from './panels/OvernightOxygenPanel'
 import { WeightPanel } from './panels/WeightPanel'
 import { QuickLogPanel } from './panels/QuickLogPanel'
 import { TimelinePanel } from './panels/TimelinePanel'
@@ -17,6 +18,7 @@ import type {
   DailyMetricRow,
   CgmPoint,
   LatestKpis,
+  Spo2CurvePoint,
 } from '@/app/lib/dashboard/daily-metrics'
 import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
 import type { RecentEntry } from '@/app/log/_lib/types'
@@ -28,9 +30,10 @@ interface Props {
   latest: LatestKpis
   recent: RecentEntry[]
   baselines: BaselinesPayload
+  spo2Curve: Spo2CurvePoint[] | null
 }
 
-export function DashboardClient({ series, cgm24h, latest, recent, baselines }: Props) {
+export function DashboardClient({ series, cgm24h, latest, recent, baselines, spo2Curve }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
   const [tab, setTab] = useState<TabId>('dashboard')
@@ -48,6 +51,7 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines }: P
           <CardiacPanel series={sliced} latest={latest} />
           <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
           <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
+          <OvernightOxygenPanel series={sliced} latest={latest} curve={spo2Curve} rangeDays={range} />
           <WeightPanel series={slicedForTrend} latest={latest} rangeDays={range} />
           <QuickLogPanel glucoseUnit={unit} />
           <TimelinePanel entries={recent} />

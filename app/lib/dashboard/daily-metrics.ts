@@ -34,6 +34,8 @@ export interface DailyMetricRow {
   cgm_count: number | null           // readings that day
   spo2_avg: number | null            // %  (Oxylink overnight average)
   spo2_min: number | null            // %  (Oxylink overnight minimum)
+  spo2_odi: number | null            // /h (Oxylink screening-grade ODI, 3% threshold — provisional)
+  spo2_time_below_90: number | null  // %  (Oxylink % of valid recording time < 90%)
 }
 
 // Postgres `numeric` round-trips as string through PostgREST — coerce
@@ -67,6 +69,8 @@ function mapDailyRow(raw: Record<string, unknown>): DailyMetricRow {
     cgm_count: n(raw.cgm_count as number | string | null),
     spo2_avg: n(raw.spo2_avg as number | string | null),
     spo2_min: n(raw.spo2_min as number | string | null),
+    spo2_odi: n(raw.spo2_odi as number | string | null),
+    spo2_time_below_90: n(raw.spo2_time_below_90 as number | string | null),
   }
 }
 
@@ -89,7 +93,7 @@ export async function fetchDailyMetrics(days: number): Promise<DailyMetricRow[]>
   const { data, error } = await supabase
     .from('daily_metrics')
     .select(
-      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min'
+      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min, spo2_odi, spo2_time_below_90'
     )
     .gte('date', cutoff)
     .order('date', { ascending: true })
@@ -163,8 +167,20 @@ export interface LatestKpis {
   strain: { value: number; at: string } | null
   sleep: { total: number; performance: number | null; at: string } | null
   cgm: { value: number; at: string; trendDir: 'rising' | 'falling' | 'flat'; slope: number } | null
-  /** Most recent overnight Oxylink reading — avg + min from the same night. */
-  spo2: { avg: number; min: number; at: string } | null
+  /**
+   * Most recent overnight Oxylink night — avg, min, ODI (3% threshold,
+   * screening-grade), time-below-90%, and the SpO2 distribution
+   * (minutes in ≥95 / 90–94 / <90 bands) read from `extras` on the
+   * ODI row. ODI may be null when validRecordingHours < ODI_MIN_HOURS.
+   */
+  spo2: {
+    avg: number
+    min: number
+    odi: number | null
+    timeBelow90Pct: number
+    distribution: { ge95: number; b90_94: number; lt90: number }
+    at: string
+  } | null
 }
 
 async function latestObs(
@@ -276,26 +292,100 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
 async function latestSpo2(
   supabase: ReturnType<typeof createServiceClient>
 ): Promise<LatestKpis['spo2']> {
+  // Pull the 4 summary metric_types for the latest night in one round-trip.
+  // The night's rows share `period_end`; we sort DESC and group on that.
   const { data, error } = await supabase
     .from('health_observations')
-    .select('metric_type, canonical_value, period_end')
+    .select('metric_type, canonical_value, period_end, extras')
     .eq('source_slug', 'oxylink_csv')
-    .in('metric_type', ['spo2_overnight_avg', 'spo2_overnight_min'])
+    .in('metric_type', [
+      'spo2_overnight_avg',
+      'spo2_overnight_min',
+      'spo2_odi',
+      'spo2_time_below_90_pct',
+    ])
     .not('period_end', 'is', null)
     .order('period_end', { ascending: false })
-    .limit(2)
-  if (error || !data || data.length < 2) return null
-  const rows = data as Array<{ metric_type: string; canonical_value: number | string; period_end: string }>
-  // The two rows for the same night share period_end; pick the latest distinct
-  // period_end (top-2 by DESC order WILL be the same night if both rows exist).
+    .limit(8) // ≤4 rows per night; cap of 8 covers the latest 1–2 nights safely.
+  if (error || !data || data.length === 0) return null
+  const rows = data as Array<{
+    metric_type: string
+    canonical_value: number | string | null
+    period_end: string
+    extras: Record<string, unknown> | null
+  }>
   const latestPeriodEnd = rows[0].period_end
   let avg: number | null = null
   let min: number | null = null
+  let odi: number | null = null
+  let timeBelow90Pct: number | null = null
+  let distribution: { ge95: number; b90_94: number; lt90: number } | null = null
   for (const r of rows) {
     if (r.period_end !== latestPeriodEnd) continue
-    if (r.metric_type === 'spo2_overnight_avg') avg = n(r.canonical_value)
-    if (r.metric_type === 'spo2_overnight_min') min = n(r.canonical_value)
+    if (r.metric_type === 'spo2_overnight_avg')      avg = n(r.canonical_value)
+    if (r.metric_type === 'spo2_overnight_min')      min = n(r.canonical_value)
+    if (r.metric_type === 'spo2_odi')                odi = n(r.canonical_value)
+    if (r.metric_type === 'spo2_time_below_90_pct')  timeBelow90Pct = n(r.canonical_value)
+    if (r.metric_type === 'spo2_odi' && r.extras) {
+      const dist = (r.extras as { spo2_distribution?: { ge95?: number; b90_94?: number; lt90?: number } })
+        .spo2_distribution
+      if (dist) {
+        distribution = {
+          ge95: n(dist.ge95 ?? null) ?? 0,
+          b90_94: n(dist.b90_94 ?? null) ?? 0,
+          lt90: n(dist.lt90 ?? null) ?? 0,
+        }
+      }
+    }
   }
   if (avg === null || min === null) return null
-  return { avg, min, at: latestPeriodEnd }
+  return {
+    avg,
+    min,
+    odi,
+    timeBelow90Pct: timeBelow90Pct ?? 0,
+    distribution: distribution ?? { ge95: 0, b90_94: 0, lt90: 0 },
+    at: latestPeriodEnd,
+  }
+}
+
+// ─── Latest overnight SpO2 curve (display-downsampled) ────────────────────
+
+export interface Spo2CurvePoint {
+  time: Date
+  value: number | null  // null = sensor-off gap (gotcha #34)
+}
+
+/**
+ * Fetch the most recent `spo2_overnight_curve` row + decode the
+ * downsampled SpO2 array packed into `extras` into a Date-keyed series the
+ * `CGMChart`-derived panel can render directly. One row per night by design.
+ * Returns null if no curve has been ingested yet.
+ */
+export async function fetchLatestSpo2Night(): Promise<Spo2CurvePoint[] | null> {
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('health_observations')
+    .select('extras, period_end')
+    .eq('source_slug', 'oxylink_csv')
+    .eq('metric_type', 'spo2_overnight_curve')
+    .not('period_end', 'is', null)
+    .order('period_end', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return null
+  const extras = (data as { extras: Record<string, unknown> | null }).extras
+  if (!extras) return null
+  const intervalS = Number(extras.interval_s)
+  const startIso = extras.start_ts as string | undefined
+  const arr = extras.spo2 as (number | null)[] | undefined
+  if (!Number.isFinite(intervalS) || !startIso || !Array.isArray(arr) || arr.length === 0) return null
+  const start = new Date(startIso).getTime()
+  const out: Spo2CurvePoint[] = new Array(arr.length)
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i]
+    const t = new Date(start + i * intervalS * 1000)
+    out[i] = { time: t, value: typeof v === 'number' && Number.isFinite(v) ? v : null }
+  }
+  return out
 }

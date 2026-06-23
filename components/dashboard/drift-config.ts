@@ -15,6 +15,7 @@ export type DriftMetricId =
   | 'fasting' | 'glucose_var' | 'tir'
   | 'weight'
   | 'spo2_avg' | 'spo2_min'
+  | 'spo2_odi' | 'spo2_time_below_90'
 
 export type ConcerningDirection = 'up' | 'down'
 
@@ -74,6 +75,8 @@ export interface DriftMetricConfig {
 //   weight       ↑  yes  |  ≥ 1.2 kg    ≥ 1.0  | 5 / 10
 //   spo2_avg     ↓  no   |  ≥ 1.5 %     ≥ 1.0  | 5 / 12
 //   spo2_min     ↓  no   |  ≥ 3.0 %     ≥ 1.0  | 5 / 12
+//   spo2_odi          ↑  yes  |  ≥ 2.0 /h    ≥ 1.0  | 5 / 12   (more desat = worse; sustained drop = real win)
+//   spo2_time_below_90 ↑ yes  |  ≥ 1.5 %     ≥ 1.0  | 5 / 12   (same)
 //
 // HRV/weight/spo2 carry the higher z-floor (HRV noisy; weight low-variance;
 // spo2_min in particular has nightly variability from sensor contact).
@@ -98,11 +101,17 @@ export const DRIFT_CONFIG: Record<DriftMetricId, DriftMetricConfig> = {
   weight:      { id: 'weight',      label: 'Weight',               short: 'Weight',     unit: 'kg',     concerning: 'up',   acknowledgeGood: true,  absFloor: 1.2, zFloor: 1.0, minNShort: 5, minNPrior: 10, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
   spo2_avg:    { id: 'spo2_avg',    label: 'Overnight SpO2 (avg)', short: 'SpO2 avg',   unit: '%',      concerning: 'down', acknowledgeGood: false, absFloor: 1.5, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
   spo2_min:    { id: 'spo2_min',    label: 'Overnight SpO2 (min)', short: 'SpO2 min',   unit: '%',      concerning: 'down', acknowledgeGood: false, absFloor: 3.0, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
+  // ODI + time-below-90: more desaturation = worse (concerning='up'); a
+  // sustained drop in either is a real win (acknowledgeGood=true) — distinct
+  // from the avg/min calls because the desaturation metrics are uncapped
+  // from below (zero is the floor and that's the good direction).
+  spo2_odi:           { id: 'spo2_odi',           label: 'Desaturations / hour',     short: 'ODI',          unit: '/h', concerning: 'up', acknowledgeGood: true, absFloor: 2.0, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
+  spo2_time_below_90: { id: 'spo2_time_below_90', label: 'Time below 90% SpO2',      short: 'Time <90%',    unit: '%',  concerning: 'up', acknowledgeGood: true, absFloor: 1.5, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
 }
 
 export const DRIFT_METRICS: readonly DriftMetricId[] = [
   'rhr', 'hrv', 'sys', 'dia', 'fasting', 'glucose_var', 'tir', 'weight',
-  'spo2_avg', 'spo2_min',
+  'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90',
 ]
 
 /**

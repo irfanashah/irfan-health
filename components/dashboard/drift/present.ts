@@ -35,6 +35,8 @@ const SOURCE_LABEL: Record<DriftMetricId, string> = {
   weight: 'Withings',          // BP-only adapter today; weight extension upcoming. Label is still Withings once it lands; manual entries also flow under this metric.
   spo2_avg: 'Oxylink',
   spo2_min: 'Oxylink',
+  spo2_odi: 'Oxylink',
+  spo2_time_below_90: 'Oxylink',
 }
 
 // ─── Public types ──────────────────────────────────────────────────────────

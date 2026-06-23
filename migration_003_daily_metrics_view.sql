@@ -43,6 +43,11 @@
 --                                 Overnight average SpO2, canonical %.
 --   spo2_min       Oxylink daily_summary, period_end attribution (wake-day).
 --                                 Overnight minimum SpO2, canonical %.
+--   spo2_odi       Oxylink daily_summary, period_end attribution (wake-day).
+--                                 Screening-grade ODI (3% threshold, AASM-style),
+--                                 events/hour. PROVISIONAL — not diagnostic.
+--   spo2_time_below_90  Oxylink daily_summary, period_end attribution.
+--                                 % of valid recording time < 90% SpO2.
 -- ============================================================
 
 
@@ -212,13 +217,18 @@ cgm_stats AS (
 spo2_daily AS (
   SELECT
     (period_end AT TIME ZONE 'Asia/Dubai')::date AS date,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_avg') AS spo2_avg,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_min') AS spo2_min
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_avg')      AS spo2_avg,
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_overnight_min')      AS spo2_min,
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_odi')                AS spo2_odi,
+    MAX(canonical_value) FILTER (WHERE metric_type = 'spo2_time_below_90_pct')  AS spo2_time_below_90
   FROM health_observations
   WHERE source_slug = 'oxylink_csv'
     AND data_shape  = 'daily_summary'
     AND period_end IS NOT NULL
-    AND metric_type IN ('spo2_overnight_avg','spo2_overnight_min')
+    AND metric_type IN (
+      'spo2_overnight_avg','spo2_overnight_min',
+      'spo2_odi','spo2_time_below_90_pct'
+    )
   GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date
 )
 
@@ -233,7 +243,7 @@ SELECT
   cs.glucose_var,
   cs.tir,
   cs.cgm_count,
-  sp.spo2_avg, sp.spo2_min
+  sp.spo2_avg, sp.spo2_min, sp.spo2_odi, sp.spo2_time_below_90
 FROM date_series ds
 LEFT JOIN bp_daily     bp ON bp.date = ds.date
 LEFT JOIN weight_daily w  ON w.date  = ds.date

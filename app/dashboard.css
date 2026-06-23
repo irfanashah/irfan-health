@@ -164,6 +164,40 @@
 .tir-row b { color: var(--text); margin-left: auto; padding-left: 14px; font-variant-numeric: tabular-nums; }
 .tir-dot { width: 9px; height: 9px; border-radius: 3px; }
 
+/* ---------- Overnight oxygen (Oxylink) ---------- */
+.spo2-readout {
+  display: grid; grid-template-columns: repeat(4, minmax(70px, 1fr));
+  gap: 14px 16px; align-items: end; margin-bottom: 12px; padding: 12px 14px;
+  background: var(--surface-2); border: 1px solid var(--card-border); border-radius: 12px;
+}
+.spo2-stat { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.spo2-stat-k {
+  font-size: 10.5px; font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.spo2-stat-tag {
+  font-size: 9.5px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em;
+  text-transform: none; background: var(--surface); border: 1px solid var(--card-border);
+  padding: 1px 5px; border-radius: 5px;
+}
+.spo2-stat-v {
+  font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.spo2-stat-u { font-size: 12px; font-weight: 600; opacity: 0.7; margin-left: 3px; }
+.spo2-meta {
+  grid-column: 1 / -1; font-size: 11px; color: var(--text-dim); font-weight: 500; margin-top: 2px;
+}
+.spo2-dist {
+  display: flex; align-items: center; gap: 22px; margin: 4px 0 14px; padding: 4px 4px 4px 0;
+  flex-wrap: wrap;
+}
+.spo2-foot {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--card-border);
+  font-size: 11px; color: var(--text-dim); font-style: italic;
+}
+
 /* ---------- Recovery & sleep ---------- */
 .strain-readout { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700;
   color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); padding: 5px 11px; border-radius: 20px; }
@@ -374,6 +408,8 @@
   .greet { font-size: 16px; }
   .greet-sub { font-size: 11.5px; }
   .glucose-top { gap: 16px; }
+  .spo2-readout { grid-template-columns: repeat(2, 1fr); }
+  .spo2-dist { gap: 14px; }
   .glucose-now { min-width: 0; }
   .g-now-val { font-size: 44px; }
   .glucose-tir { margin-left: 0; width: 100%; justify-content: space-between; }

@@ -189,19 +189,21 @@ CREATE POLICY "authenticated_full_access" ON med_changes
 CREATE OR REPLACE VIEW metric_drift AS
 
 WITH
--- 1. Unpivot daily_metrics into long form for the 10 metrics (8 v1 + 2 SpO2).
+-- 1. Unpivot daily_metrics into long form for the 12 metrics (8 v1 + 2 SpO2 + 2 desat).
 --    NULL values are excluded by design — only real readings flow through.
 long_form AS (
   SELECT date, 'rhr'         AS metric, rhr::numeric         AS value FROM daily_metrics WHERE rhr         IS NOT NULL
-  UNION ALL SELECT date, 'hrv',         hrv::numeric                 FROM daily_metrics WHERE hrv         IS NOT NULL
-  UNION ALL SELECT date, 'sys',         sys::numeric                 FROM daily_metrics WHERE sys         IS NOT NULL
-  UNION ALL SELECT date, 'dia',         dia::numeric                 FROM daily_metrics WHERE dia         IS NOT NULL
-  UNION ALL SELECT date, 'fasting',     fasting::numeric             FROM daily_metrics WHERE fasting     IS NOT NULL
-  UNION ALL SELECT date, 'glucose_var', glucose_var::numeric         FROM daily_metrics WHERE glucose_var IS NOT NULL
-  UNION ALL SELECT date, 'tir',         tir::numeric                 FROM daily_metrics WHERE tir         IS NOT NULL
-  UNION ALL SELECT date, 'weight',      weight::numeric              FROM daily_metrics WHERE weight      IS NOT NULL
-  UNION ALL SELECT date, 'spo2_avg',    spo2_avg::numeric            FROM daily_metrics WHERE spo2_avg    IS NOT NULL
-  UNION ALL SELECT date, 'spo2_min',    spo2_min::numeric            FROM daily_metrics WHERE spo2_min    IS NOT NULL
+  UNION ALL SELECT date, 'hrv',                hrv::numeric                AS value FROM daily_metrics WHERE hrv                IS NOT NULL
+  UNION ALL SELECT date, 'sys',                sys::numeric                AS value FROM daily_metrics WHERE sys                IS NOT NULL
+  UNION ALL SELECT date, 'dia',                dia::numeric                AS value FROM daily_metrics WHERE dia                IS NOT NULL
+  UNION ALL SELECT date, 'fasting',            fasting::numeric            AS value FROM daily_metrics WHERE fasting            IS NOT NULL
+  UNION ALL SELECT date, 'glucose_var',        glucose_var::numeric        AS value FROM daily_metrics WHERE glucose_var        IS NOT NULL
+  UNION ALL SELECT date, 'tir',                tir::numeric                AS value FROM daily_metrics WHERE tir                IS NOT NULL
+  UNION ALL SELECT date, 'weight',             weight::numeric             AS value FROM daily_metrics WHERE weight             IS NOT NULL
+  UNION ALL SELECT date, 'spo2_avg',           spo2_avg::numeric           AS value FROM daily_metrics WHERE spo2_avg           IS NOT NULL
+  UNION ALL SELECT date, 'spo2_min',           spo2_min::numeric           AS value FROM daily_metrics WHERE spo2_min           IS NOT NULL
+  UNION ALL SELECT date, 'spo2_odi',           spo2_odi::numeric           AS value FROM daily_metrics WHERE spo2_odi           IS NOT NULL
+  UNION ALL SELECT date, 'spo2_time_below_90', spo2_time_below_90::numeric AS value FROM daily_metrics WHERE spo2_time_below_90 IS NOT NULL
 ),
 
 -- 2. Latest active med-change date per metric (window-start reset floor).

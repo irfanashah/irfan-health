@@ -46,6 +46,19 @@ export const st = {
     if (v === null) return 'neutral'
     return v >= 94 ? 'good' : v >= 90 ? 'watch' : 'concern'
   },
+  /**
+   * ODI severity display band (Overnight Oxygen panel). Standard ODI/AHI
+   * severity tiers, mapped onto the calm 4-state palette:
+   *   < 5  normal      → good
+   *   5–<15 mild       → watch
+   *   ≥ 15 moderate+   → concern (15–30 moderate; >30 severe — both rendered
+   *                       as concern in the dot; the readout shows the number)
+   * SCREENING ONLY — provisional pending Dr. Jose. Not a diagnosis.
+   */
+  odi: (v: number | null): Status => {
+    if (v === null) return 'neutral'
+    return v < 5 ? 'good' : v < 15 ? 'watch' : 'concern'
+  },
 }
 
 export const MMOL_TO_MGDL = 18.0182
