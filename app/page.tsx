@@ -27,7 +27,7 @@ export default async function DashboardPage() {
   // Recent manual entries reuse Slice 3's fetcher for the Timeline panel.
   // Baselines payload (Slice 7.3) is its own bounded pull off metric_drift +
   // context_periods + anchor_sets + med_changes (4 parallel sub-queries).
-  const [series, cgm24h, recent, baselines, spo2Curve] = await Promise.all([
+  const [series, cgm24h, recent, baselines, spo2Night] = await Promise.all([
     fetchDailyMetrics(90),
     fetchCgm24h(),
     fetchRecentManual(20),
@@ -43,7 +43,7 @@ export default async function DashboardPage() {
       latest={latest}
       recent={recent}
       baselines={baselines}
-      spo2Curve={spo2Curve}
+      spo2Night={spo2Night}
     />
   )
 }

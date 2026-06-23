@@ -1,6 +1,6 @@
 'use client'
 
-import { Sparkles, Activity, HeartPulse, Droplet, Moon, Heart, Scale, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react'
+import { Sparkles, Activity, HeartPulse, Droplet, Moon, Heart, Scale, Wind, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { PanelHeader } from '../ui/PanelHeader'
 import { KpiCard } from '../ui/KpiCard'
@@ -30,6 +30,7 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props
   const sleepSpark = take(series, 16).map((d) => d.sleep_total).filter((v): v is number => v !== null)
   const rhrSpark = take(series, 16).map((d) => d.rhr).filter((v): v is number => v !== null)
   const weightSpark = take(series, 16).map((d) => d.weight).filter((v): v is number => v !== null)
+  const spo2MinSpark = take(series, 16).map((d) => d.spo2_min).filter((v): v is number => v !== null)
 
   // Weight delta over range — based on first & last non-null in the slice
   const weightFirst = series.find((d) => d.weight !== null)?.weight ?? null
@@ -118,6 +119,15 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props
           deltaDir={weightDelta !== null ? (weightDelta <= 0 ? 'down' : 'up') : undefined}
           deltaGood={weightDelta !== null ? weightDelta <= 0 : undefined}
           sub={`${rangeDays}d trend`}
+        />
+        <KpiCard
+          icon={<Wind size={17} />}
+          label="Min SpO2"
+          value={latest.spo2 ? Math.round(latest.spo2.min) : '—'}
+          unit={latest.spo2 ? '%' : undefined}
+          status={st.spo2(latest.spo2?.min ?? null)}
+          spark={spo2MinSpark}
+          sub={latest.spo2 ? 'overnight · Oxylink' : 'Oxylink'}
         />
       </div>
     </Card>

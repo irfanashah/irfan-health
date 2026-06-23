@@ -4,10 +4,12 @@ import { useCallback, useMemo, useState } from 'react'
 import { useMeasure } from './useMeasure'
 import { clampN, fmtTime, smoothPath } from './chart-utils'
 import { Tooltip } from './Tooltip'
-import type { Spo2CurvePoint } from '@/app/lib/dashboard/daily-metrics'
+import type { Spo2CurvePoint, Spo2DesatEvent } from '@/app/lib/dashboard/daily-metrics'
 
 interface Props {
   data: Spo2CurvePoint[]
+  /** Detected 3% desaturation events — markers plotted at true (t, nadir). */
+  events?: Spo2DesatEvent[]
   /** SpO2 floor for the reference line (display only). Default 90. */
   referenceLine?: number
   /** Shaded "normal" band lo/hi (display only). Default 95–100. */
@@ -24,6 +26,7 @@ interface Props {
  */
 export function Spo2OvernightChart({
   data,
+  events = [],
   referenceLine = 90,
   bandLo = 95,
   bandHi = 100,
@@ -31,6 +34,7 @@ export function Spo2OvernightChart({
 }: Props) {
   const [ref, w] = useMeasure()
   const [hover, setHover] = useState<number | null>(null)
+  const [hoverEv, setHoverEv] = useState<number | null>(null)
   const gid = useMemo(() => 'spo2' + Math.random().toString(36).slice(2), [])
 
   if (data.length === 0) {
@@ -98,6 +102,29 @@ export function Spo2OvernightChart({
     },
     [iw, n, m.left]
   )
+
+  // ─── Desaturation event markers ──────────────────────────────────────
+  // Position each marker at the event's TRUE timestamp (interpolated
+  // linearly between curve sample times) and TRUE nadir SpO2 (the actual
+  // depth at full ~4 s resolution). The display curve's 20 s downsampling
+  // never compromises the marker — markers come straight from the parser's
+  // event detection, not from the rendered line.
+  const t0 = data[0].time.getTime()
+  const tN = data[n - 1].time.getTime()
+  const span = Math.max(1, tN - t0)
+  const eventMarks = events
+    .map((ev) => {
+      const tt = ev.time.getTime()
+      if (tt < t0 || tt > tN) return null
+      const frac = clampN((tt - t0) / span, 0, 1)
+      const x = m.left + frac * iw
+      // Clamp nadir into the visible y-domain so a sub-80 reading still
+      // lands on-chart (depth still shown in the tooltip).
+      const ny = clampN(ev.nadirSpo2, dLo, dHi)
+      const y = yOf(ny)
+      return { ev, x, y }
+    })
+    .filter((m): m is { ev: Spo2DesatEvent; x: number; y: number } => m !== null)
 
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }}>
@@ -169,6 +196,32 @@ export function Spo2OvernightChart({
             />
           </g>
         ))}
+        {/* desaturation event markers at TRUE (t, nadir). 4% events get a
+            slightly bigger dot; small enough to stay calm on a heavy-event
+            night. */}
+        {eventMarks.map((mk, i) => {
+          const active = hoverEv === i
+          const r = mk.ev.also4Pct ? 4 : 3
+          return (
+            <g
+              key={'ev' + i}
+              onMouseEnter={() => setHoverEv(i)}
+              onMouseLeave={() => setHoverEv(null)}
+              style={{ cursor: 'default' }}
+            >
+              {/* invisible larger hit target so a 3 px dot is still hoverable */}
+              <circle cx={mk.x} cy={mk.y} r={8} fill="transparent" />
+              <circle
+                cx={mk.x} cy={mk.y}
+                r={active ? r + 2 : r}
+                fill="var(--red)"
+                stroke="var(--surface)"
+                strokeWidth={1.2}
+                opacity={active ? 1 : 0.75}
+              />
+            </g>
+          )
+        })}
         {/* hover guide — only when hovering a non-null sample */}
         {hover !== null && data[hover].value !== null && (
           <g>
@@ -191,6 +244,20 @@ export function Spo2OvernightChart({
           rows={[{ color: 'var(--teal)', label: 'SpO2', value: `${data[hover].value}%` }]}
         />
       )}
+      {hoverEv !== null && eventMarks[hoverEv] && (() => {
+        const mk = eventMarks[hoverEv]
+        return (
+          <Tooltip
+            x={mk.x}
+            width={width}
+            title={`Desaturation · ${fmtTime(mk.ev.time)}`}
+            rows={[
+              { color: 'var(--red)', label: 'Nadir', value: `${mk.ev.nadirSpo2}%` },
+              { color: 'var(--text-muted)', label: 'Drop', value: `${mk.ev.dropPct.toFixed(1)} pp${mk.ev.also4Pct ? ' · ≥4%' : ''}` },
+            ]}
+          />
+        )
+      })()}
     </div>
   )
 }

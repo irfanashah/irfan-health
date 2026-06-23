@@ -10,13 +10,13 @@ import { st, STATUS_COLOR, LOW_FLOOR_PROVISIONAL_NOTE } from '../thresholds'
 import type {
   DailyMetricRow,
   LatestKpis,
-  Spo2CurvePoint,
+  Spo2NightPayload,
 } from '@/app/lib/dashboard/daily-metrics'
 
 interface Props {
   series: DailyMetricRow[]
   latest: LatestKpis
-  curve: Spo2CurvePoint[] | null
+  night: Spo2NightPayload | null
   rangeDays: number
 }
 
@@ -34,7 +34,9 @@ function fmtWakeDate(iso: string): string {
  * SCREENING-GRADE only. All clinical numbers (ODI severity, low-floor band)
  * are provisional pending Dr. Jose.
  */
-export function OvernightOxygenPanel({ series, latest, curve, rangeDays }: Props) {
+export function OvernightOxygenPanel({ series, latest, night, rangeDays }: Props) {
+  const curve = night?.curve ?? null
+  const events = night?.events ?? []
   const hasNight = !!latest.spo2
   const hasTrend = series.some((d) => d.spo2_min !== null || d.spo2_odi !== null)
 
@@ -134,10 +136,13 @@ export function OvernightOxygenPanel({ series, latest, curve, rangeDays }: Props
       {/* ─── Overnight trace (latest night) ───────────────────────────── */}
       <div className="chart-caption">
         <span>Latest night</span>
-        <span className="muted-note">normal band shaded ≥95% · 90% reference line</span>
+        <span className="muted-note">
+          ≥95% band shaded · 90% reference · desaturation events marked
+          {events.length > 0 ? ` (${events.length})` : ''}
+        </span>
       </div>
       {curve && curve.length > 0 ? (
-        <Spo2OvernightChart data={curve} />
+        <Spo2OvernightChart data={curve} events={events} />
       ) : (
         <div className="empty-note">No overnight curve yet</div>
       )}

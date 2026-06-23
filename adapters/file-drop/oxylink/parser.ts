@@ -263,6 +263,11 @@ export function parseOxylink(
     odi_4pct: desat.odi4Pct,
     desaturation_event_count: desat.eventCount3pct,
     desaturation_event_count_4pct: desat.eventCount4pct,
+    // True per-event detail (timestamp at nadir + nadir SpO2 + drop pp),
+    // captured during the same 3% pass that yielded the count above. The
+    // overnight-trace marker layer plots these at their exact times +
+    // depths so display-curve downsampling never compromises the markers.
+    desaturation_events: desat.events3pct,
     valid_recording_hours: round1(desat.validRecordingHours),
     time_below_90_min: round1(desat.timeBelow90Min),
     time_below_88_min: round1(desat.timeBelow88Min),
@@ -410,6 +415,22 @@ function round1(v: number): number {
 // All numbers here are SCREENING-grade approximations. Don't claim diagnostic
 // accuracy anywhere in the UI.
 
+/**
+ * One detected desaturation event — captured during the ODI pass so the
+ * dashboard can plot a marker at the event's TRUE timestamp + TRUE nadir,
+ * independent of the display curve's downsampling.
+ */
+interface DesatEvent {
+  /** Nadir timestamp, epoch ms (the moment SpO2 hit bottom). */
+  t: number
+  /** SpO2 % at the nadir. */
+  nadir_spo2: number
+  /** Drop from the trailing-window baseline at the nadir (pp). */
+  drop_pct: number
+  /** Whether this event also crossed the 4 % threshold. */
+  also_4pct: boolean
+}
+
 interface DesaturationStats {
   /** ODI at the 3% threshold, /h. Null if validRecordingHours < ODI_MIN_HOURS. */
   odi3PctOrNull: number | null
@@ -417,6 +438,12 @@ interface DesaturationStats {
   odi4Pct: number
   eventCount3pct: number
   eventCount4pct: number
+  /**
+   * Detected 3% events with TRUE timestamp + nadir. Stored on the
+   * `spo2_odi` row's extras so the overnight-trace markers can plot
+   * exact times/depths even when the display curve is downsampled.
+   */
+  events3pct: DesatEvent[]
   validRecordingHours: number
   timeBelow90Min: number
   timeBelow88Min: number
@@ -427,8 +454,21 @@ interface DesaturationStats {
 }
 
 function computeDesaturation(rows: ParsedRow[]): DesaturationStats {
-  const eventCount3pct = countDesatEvents(rows, ODI_DROP_PCT)
-  const eventCount4pct = countDesatEvents(rows, ODI_DROP_PCT_4)
+  // The 3% pass returns full event detail (we plot markers off this); the 4%
+  // pass only needs the count. The detector is the same algorithm both times.
+  const detect3 = detectDesatEvents(rows, ODI_DROP_PCT)
+  const events3pct = detect3.events
+  const eventCount3pct = events3pct.length
+  const detect4 = detectDesatEvents(rows, ODI_DROP_PCT_4)
+  const eventCount4pct = detect4.events.length
+
+  // Annotate each 3% event with whether it also crosses 4% — checked by
+  // matching nadir timestamps (within a 1 s window to absorb any minor edge
+  // differences between the two passes).
+  const events4Times = detect4.events.map((e) => e.t)
+  for (const ev of events3pct) {
+    ev.also_4pct = events4Times.some((t) => Math.abs(t - ev.t) <= 1000)
+  }
 
   let validSec = 0
   let below90Sec = 0
@@ -461,6 +501,7 @@ function computeDesaturation(rows: ParsedRow[]): DesaturationStats {
     odi4Pct: odi4,
     eventCount3pct,
     eventCount4pct,
+    events3pct,
     validRecordingHours,
     timeBelow90Min: below90Sec / 60,
     timeBelow88Min: below88Sec / 60,
@@ -476,11 +517,18 @@ function computeDesaturation(rows: ParsedRow[]): DesaturationStats {
  * Walks forward looking for a nadir ≥ dropPct below that baseline; the
  * event is confirmed only if the dip lasts ≥ ODI_MIN_EVENT_DURATION_S and
  * the nadir is ≥ ODI_MIN_EVENT_SEPARATION_S after the previous event.
+ *
+ * Returns both the count and the per-event detail (true nadir timestamp +
+ * depth) so the dashboard can plot markers at exact positions independent
+ * of the stored display curve's downsampling.
  */
-function countDesatEvents(rows: ParsedRow[], dropPct: number): number {
-  if (rows.length < 2) return 0
+function detectDesatEvents(
+  rows: ParsedRow[],
+  dropPct: number
+): { events: DesatEvent[]; count: number } {
+  if (rows.length < 2) return { events: [], count: 0 }
+  const events: DesatEvent[] = []
   let lastEventTs = -Infinity
-  let events = 0
   let i = 0
   while (i < rows.length) {
     const tNow = rows[i].ts.getTime() / 1000
@@ -508,11 +556,17 @@ function countDesatEvents(rows: ParsedRow[], dropPct: number): number {
 
     const drop = baseline - nadirVal
     const durationSec = (rows[j].ts.getTime() - rows[i].ts.getTime()) / 1000
-    const separationSec = rows[nadirIdx].ts.getTime() / 1000 - lastEventTs
+    const nadirT = rows[nadirIdx].ts.getTime()
+    const separationSec = nadirT / 1000 - lastEventTs
 
     if (drop >= dropPct && durationSec >= ODI_MIN_EVENT_DURATION_S && separationSec >= ODI_MIN_EVENT_SEPARATION_S) {
-      events++
-      lastEventTs = rows[nadirIdx].ts.getTime() / 1000
+      events.push({
+        t: nadirT,
+        nadir_spo2: nadirVal,
+        drop_pct: round1(drop),
+        also_4pct: false, // annotated by the caller from the 4% pass
+      })
+      lastEventTs = nadirT / 1000
       // Advance past the recovery point so the next baseline lookup uses
       // post-event samples.
       i = j
@@ -520,7 +574,7 @@ function countDesatEvents(rows: ParsedRow[], dropPct: number): number {
     }
     i++
   }
-  return events
+  return { events, count: events.length }
 }
 
 /**

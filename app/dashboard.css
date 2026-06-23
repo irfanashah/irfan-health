@@ -113,7 +113,7 @@
 .source-dot { width: 7px; height: 7px; border-radius: 50%; }
 
 /* ---------- KPI ---------- */
-.kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 12px; }
 .kpi { background: var(--surface-2); border: 1px solid var(--card-border); border-radius: var(--radius-sm);
   padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
 .kpi-top { display: flex; align-items: center; gap: 7px; }

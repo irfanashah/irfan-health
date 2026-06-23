@@ -357,14 +357,36 @@ export interface Spo2CurvePoint {
 }
 
 /**
- * Fetch the most recent `spo2_overnight_curve` row + decode the
- * downsampled SpO2 array packed into `extras` into a Date-keyed series the
- * `CGMChart`-derived panel can render directly. One row per night by design.
- * Returns null if no curve has been ingested yet.
+ * One detected 3% desaturation event with TRUE nadir time + depth. Captured
+ * at full ~4 s resolution during the ODI pass at ingest, so the overnight-
+ * trace markers plot exact positions independent of the display curve's
+ * 20 s downsampling.
  */
-export async function fetchLatestSpo2Night(): Promise<Spo2CurvePoint[] | null> {
+export interface Spo2DesatEvent {
+  time: Date
+  nadirSpo2: number
+  dropPct: number
+  also4Pct: boolean
+}
+
+export interface Spo2NightPayload {
+  curve: Spo2CurvePoint[]
+  events: Spo2DesatEvent[]
+}
+
+/**
+ * Fetch the most recent overnight night's data: the display-downsampled
+ * SpO2 curve (one JSONB row in `health_observations`) plus the per-event
+ * desaturation array (lives on the `spo2_odi` row's `extras`). Same night
+ * by definition — matched on `period_end`. Returns null if no curve has
+ * been ingested yet.
+ */
+export async function fetchLatestSpo2Night(): Promise<Spo2NightPayload | null> {
   const supabase = createServiceClient()
-  const { data, error } = await supabase
+
+  // Pull the latest curve row first; we'll match the ODI row on the same
+  // period_end to get the night's events.
+  const { data: curveRow, error: curveErr } = await supabase
     .from('health_observations')
     .select('extras, period_end')
     .eq('source_slug', 'oxylink_csv')
@@ -373,19 +395,52 @@ export async function fetchLatestSpo2Night(): Promise<Spo2CurvePoint[] | null> {
     .order('period_end', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (error || !data) return null
-  const extras = (data as { extras: Record<string, unknown> | null }).extras
-  if (!extras) return null
-  const intervalS = Number(extras.interval_s)
-  const startIso = extras.start_ts as string | undefined
-  const arr = extras.spo2 as (number | null)[] | undefined
+  if (curveErr || !curveRow) return null
+  const curveExtras = (curveRow as { extras: Record<string, unknown> | null }).extras
+  const periodEnd = (curveRow as { period_end: string }).period_end
+  if (!curveExtras) return null
+  const intervalS = Number(curveExtras.interval_s)
+  const startIso = curveExtras.start_ts as string | undefined
+  const arr = curveExtras.spo2 as (number | null)[] | undefined
   if (!Number.isFinite(intervalS) || !startIso || !Array.isArray(arr) || arr.length === 0) return null
   const start = new Date(startIso).getTime()
-  const out: Spo2CurvePoint[] = new Array(arr.length)
+  const curve: Spo2CurvePoint[] = new Array(arr.length)
   for (let i = 0; i < arr.length; i++) {
     const v = arr[i]
     const t = new Date(start + i * intervalS * 1000)
-    out[i] = { time: t, value: typeof v === 'number' && Number.isFinite(v) ? v : null }
+    curve[i] = { time: t, value: typeof v === 'number' && Number.isFinite(v) ? v : null }
   }
-  return out
+
+  // Match the ODI row from the SAME night (same period_end) — its extras
+  // carry the true per-event array captured at full resolution.
+  let events: Spo2DesatEvent[] = []
+  const { data: odiRow } = await supabase
+    .from('health_observations')
+    .select('extras')
+    .eq('source_slug', 'oxylink_csv')
+    .eq('metric_type', 'spo2_odi')
+    .eq('period_end', periodEnd)
+    .maybeSingle()
+  if (odiRow) {
+    const odiExtras = (odiRow as { extras: Record<string, unknown> | null }).extras
+    const raw = odiExtras?.desaturation_events
+    if (Array.isArray(raw)) {
+      events = (raw as Array<Record<string, unknown>>)
+        .map((e) => {
+          const t = Number(e.t)
+          const nadir = Number(e.nadir_spo2)
+          const drop = Number(e.drop_pct)
+          if (!Number.isFinite(t) || !Number.isFinite(nadir) || !Number.isFinite(drop)) return null
+          return {
+            time: new Date(t),
+            nadirSpo2: nadir,
+            dropPct: drop,
+            also4Pct: e.also_4pct === true,
+          } as Spo2DesatEvent
+        })
+        .filter((e): e is Spo2DesatEvent => e !== null)
+    }
+  }
+
+  return { curve, events }
 }
