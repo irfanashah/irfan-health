@@ -10,14 +10,25 @@ export interface CgmDatum {
   value: number
 }
 
-/** Event marker pinned onto the 24h CGM curve (Slice 7.2 Annotated glucose). */
+/**
+ * Event marker pinned onto the 24h CGM curve.
+ *
+ * Two anchoring modes:
+ *  - kind ∈ {'symptom','note'} (Slice 7.2) → marker snaps to the CGM curve's
+ *    value at that timestamp; symptoms get a top-of-chart pin too.
+ *  - kind === 'fingerstick' (Contour parser + manual log) → marker plots at
+ *    its OWN reading (`value`) NOT snapped to the curve, so meter-vs-sensor
+ *    agreement is visible. No top-of-chart pin.
+ */
 export interface CgmMarker {
   id: string
   time: Date
   label: string
   detail?: string
-  kind: 'symptom' | 'note'
+  kind: 'symptom' | 'note' | 'fingerstick'
   redFlag?: boolean
+  /** mmol/L — required when kind==='fingerstick' so the marker plots at the meter's own value. */
+  value?: number
 }
 
 interface Props {
@@ -93,8 +104,10 @@ export function CGMChart({
     [iw, n, m.left]
   )
 
-  // Map markers (by timestamp) to an x position + nearest-sample y. Out-of-window
-  // markers drop out — the panel filters before passing, but we double-check here.
+  // Map markers (by timestamp) to an x position + the CGM value at that time.
+  // Out-of-window markers drop out — the panel filters before passing, but we
+  // double-check here. Fingerstick markers carry their OWN reading; the CGM
+  // value is still captured (in `val`) so the tooltip can show both side by side.
   const t0 = data[0].time.getTime()
   const tN = data[n - 1].time.getTime()
   const mks = (markers ?? [])
@@ -158,10 +171,41 @@ export function CGMChart({
         />
         <path d={smoothPath(pts)} fill="none" stroke="var(--purple)" strokeWidth={2.2}
           strokeLinecap="round" strokeLinejoin="round" />
-        {/* event markers (symptoms / notes); red-flag stand out */}
+        {/* event markers — branch on kind:
+            - symptom / note  → top-of-chart pin + dot snapped to the CGM curve
+            - fingerstick     → value-anchored diamond at the meter's OWN reading
+                                (NOT snapped to the curve, so meter-vs-sensor
+                                agreement is visible at a glance) */}
         {mks.map((mm, i) => {
-          const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
           const active = hoverMk === i
+          if (mm.kind === 'fingerstick' && mm.value !== undefined) {
+            // Diamond glyph at yOf(meter value). Distinct teal — separates it
+            // visually from the purple CGM line + amber/grey symptom pins.
+            const my = yOf(mm.value)
+            const r = active ? 6 : 5
+            return (
+              <g
+                key={mm.id}
+                onMouseEnter={() => setHoverMk(i)}
+                onMouseLeave={() => setHoverMk(null)}
+                style={{ cursor: 'default' }}
+              >
+                {/* invisible larger hit target */}
+                <circle cx={mm.x} cy={my} r={9} fill="transparent" />
+                {/* diamond — rotate a square 45° */}
+                <rect
+                  x={mm.x - r} y={my - r} width={r * 2} height={r * 2}
+                  transform={`rotate(45 ${mm.x} ${my})`}
+                  fill="var(--surface)"
+                  stroke="var(--teal)"
+                  strokeWidth={2}
+                  opacity={active ? 1 : 0.9}
+                />
+              </g>
+            )
+          }
+          // symptom / note — existing time-anchored pin + curve-snapped dot.
+          const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
           return (
             <g
               key={mm.id}
@@ -208,6 +252,16 @@ export function CGMChart({
       )}
       {hoverMk !== null && mks[hoverMk] && (() => {
         const mm = mks[hoverMk]
+        if (mm.kind === 'fingerstick' && mm.value !== undefined) {
+          // Meter value first; CGM value at that time second so agreement is
+          // glanceable; meal marker / source as the trailing detail line.
+          const rows = [
+            { color: 'var(--teal)',       label: 'Meter',     value: `${toDisplay(mm.value)} ${unit}` },
+            { color: 'var(--purple)',     label: 'CGM',       value: `${toDisplay(mm.val)} ${unit}` },
+          ]
+          if (mm.detail) rows.push({ color: 'transparent', label: mm.detail, value: '' })
+          return <Tooltip x={mm.x} width={width} title={fmtTime(mm.time)} rows={rows} />
+        }
         const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
         const rows = [
           { color: col, label: mm.label, value: `${toDisplay(mm.val)} ${unit}` },

@@ -3,16 +3,22 @@
 import { Droplet, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { PanelHeader } from '../ui/PanelHeader'
-import { CGMChart } from '../charts/CGMChart'
+import { CGMChart, type CgmMarker } from '../charts/CGMChart'
 import { Donut } from '../charts/Donut'
 import { GLUCOSE_HI, GLUCOSE_LO, MMOL_TO_MGDL, STATUS_COLOR, st } from '../thresholds'
-import type { CgmPoint, LatestKpis } from '@/app/lib/dashboard/daily-metrics'
+import type { CgmPoint, LatestKpis, FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
 
 interface Props {
   cgm24h: CgmPoint[]
   latest: LatestKpis
   unit: 'mmol/L' | 'mg/dL'
   onUnitChange: (u: 'mmol/L' | 'mg/dL') => void
+  fingersticks?: FingerstickPoint[]
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  contour: 'Contour',
+  manual: 'Manual log',
 }
 
 function fmtUpdated(iso: string): string {
@@ -20,7 +26,25 @@ function fmtUpdated(iso: string): string {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-export function GlucosePanel({ cgm24h, latest, unit, onUnitChange }: Props) {
+export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks = [] }: Props) {
+  // Map fingerstick readings (Contour + Slice 3 manual — both write
+  // metric_type='glucose_fingerstick') into value-anchored CgmMarkers.
+  // The CGMChart plots each at yOf(value), NOT snapped to the CGM curve,
+  // so meter-vs-sensor agreement is visible at the moment the reading was taken.
+  const fingerstickMarkers: CgmMarker[] = fingersticks.map((fs, i) => {
+    const sourceLabel = SOURCE_LABEL[fs.source] ?? fs.source
+    const detail = fs.mealMarker
+      ? `${fs.mealMarker} · ${sourceLabel}`
+      : sourceLabel
+    return {
+      id: `fs-${i}-${fs.time.getTime()}`,
+      time: fs.time,
+      kind: 'fingerstick',
+      label: 'Fingerstick',
+      detail,
+      value: fs.mmol,
+    }
+  })
   const toG = (mmol: number) => (unit === 'mmol/L' ? +mmol.toFixed(1) : Math.round(mmol * MMOL_TO_MGDL))
 
   // Compute TIR from the same 24h window we're charting (consistent with what the user sees).
@@ -108,6 +132,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange }: Props) {
         unit={unit}
         toDisplay={toG}
         height={216}
+        markers={fingerstickMarkers}
       />
     </Card>
   )

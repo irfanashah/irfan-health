@@ -349,6 +349,55 @@ async function latestSpo2(
   }
 }
 
+// ─── Fingerstick readings (last N hours) ──────────────────────────────────
+
+export interface FingerstickPoint {
+  time: Date
+  mmol: number                  // canonical_value
+  mealMarker: string | null     // extras.meal_marker — null for manual entries
+  source: string                // source_slug ('contour' | 'manual' | future)
+}
+
+/**
+ * Recent fingerstick readings — surfaces both the Contour parser and the
+ * Slice 3 manual entry path (both write `metric_type='glucose_fingerstick'`),
+ * so manual fingersticks start appearing as markers automatically. Sparse
+ * by nature (typically 1–4/day), well under Supabase's 1000-row cap.
+ */
+export async function fetchFingersticks(hours: number = 24): Promise<FingerstickPoint[]> {
+  const supabase = createServiceClient()
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('health_observations')
+    .select('recorded_at, canonical_value, extras, source_slug')
+    .eq('metric_type', 'glucose_fingerstick')
+    .gte('recorded_at', since)
+    .order('recorded_at', { ascending: true })
+    .limit(1000)
+  if (error) throw new Error(`fingerstick fetch failed: ${error.message}`)
+  return (data ?? [])
+    .map((r) => {
+      const row = r as {
+        recorded_at: string | null
+        canonical_value: number | string | null
+        extras: Record<string, unknown> | null
+        source_slug: string | null
+      }
+      const v = n(row.canonical_value)
+      if (!row.recorded_at || v === null) return null
+      const mm = row.extras && typeof row.extras.meal_marker === 'string'
+        ? (row.extras.meal_marker as string)
+        : null
+      return {
+        time: new Date(row.recorded_at),
+        mmol: v,
+        mealMarker: mm,
+        source: row.source_slug ?? 'unknown',
+      }
+    })
+    .filter((p): p is FingerstickPoint => p !== null)
+}
+
 // ─── Latest overnight SpO2 curve (display-downsampled) ────────────────────
 
 export interface Spo2CurvePoint {

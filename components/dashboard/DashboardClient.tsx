@@ -19,6 +19,7 @@ import type {
   CgmPoint,
   LatestKpis,
   Spo2NightPayload,
+  FingerstickPoint,
 } from '@/app/lib/dashboard/daily-metrics'
 import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
 import type { RecentEntry } from '@/app/log/_lib/types'
@@ -31,9 +32,10 @@ interface Props {
   recent: RecentEntry[]
   baselines: BaselinesPayload
   spo2Night: Spo2NightPayload | null
+  fingersticks: FingerstickPoint[]
 }
 
-export function DashboardClient({ series, cgm24h, latest, recent, baselines, spo2Night }: Props) {
+export function DashboardClient({ series, cgm24h, latest, recent, baselines, spo2Night, fingersticks }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
   const [tab, setTab] = useState<TabId>('dashboard')
@@ -49,7 +51,7 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines, spo
         <main className="grid">
           <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} />
           <CardiacPanel series={sliced} latest={latest} />
-          <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} />
+          <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} fingersticks={fingersticks} />
           <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />
           <OvernightOxygenPanel series={sliced} latest={latest} night={spo2Night} rangeDays={range} />
           <WeightPanel series={slicedForTrend} latest={latest} rangeDays={range} />
