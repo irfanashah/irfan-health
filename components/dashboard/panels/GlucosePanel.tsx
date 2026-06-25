@@ -13,6 +13,9 @@ interface Props {
   latest: LatestKpis
   unit: 'mmol/L' | 'mg/dL'
   onUnitChange: (u: 'mmol/L' | 'mg/dL') => void
+  /** Up to ~14 days of fingersticks (Contour + manual). The panel slices: */
+  /**   - last 24 h → CGM overlay markers (existing behaviour when CGM is live) */
+  /**   - head + top-10 → fallback "now" + recent-readings list when CGM is stale */
   fingersticks?: FingerstickPoint[]
 }
 
@@ -21,17 +24,54 @@ const SOURCE_LABEL: Record<string, string> = {
   manual: 'Manual log',
 }
 
+const FALLBACK_LIST_LIMIT = 10
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
 function fmtUpdated(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
+function fmtAgo(time: Date): string {
+  const dt = Date.now() - time.getTime()
+  if (dt < HOUR_MS) {
+    const m = Math.max(1, Math.round(dt / 60000))
+    return `${m}m ago`
+  }
+  if (dt < DAY_MS) {
+    const h = Math.round(dt / HOUR_MS)
+    return `${h}h ago`
+  }
+  const days = Math.round(dt / DAY_MS)
+  return `${days}d ago`
+}
+
+function fmtListTime(time: Date): string {
+  const dt = Date.now() - time.getTime()
+  if (dt < DAY_MS) {
+    return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  }
+  return time.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+    ' · ' +
+    time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
 export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks = [] }: Props) {
-  // Map fingerstick readings (Contour + Slice 3 manual — both write
-  // metric_type='glucose_fingerstick') into value-anchored CgmMarkers.
-  // The CGMChart plots each at yOf(value), NOT snapped to the CGM curve,
-  // so meter-vs-sensor agreement is visible at the moment the reading was taken.
-  const fingerstickMarkers: CgmMarker[] = fingersticks.map((fs, i) => {
+  const toG = (mmol: number) => (unit === 'mmol/L' ? +mmol.toFixed(1) : Math.round(mmol * MMOL_TO_MGDL))
+
+  // ─── Fingerstick slices ────────────────────────────────────────────────
+  // Ascending order from the reader; slice for the two distinct uses.
+  const since24h = Date.now() - DAY_MS
+  const fingersticks24h = fingersticks.filter((fs) => fs.time.getTime() >= since24h)
+  const fingersticksNewestFirst = [...fingersticks].reverse()
+  const latestFingerstick = fingersticksNewestFirst[0] ?? null
+  const recentFingerstickList = fingersticksNewestFirst.slice(0, FALLBACK_LIST_LIMIT)
+
+  // ─── Overlay markers (used when CGM is live) ──────────────────────────
+  // Value-anchored — each fingerstick plots at yOf(value), NOT snapped to
+  // the CGM curve, so meter-vs-sensor agreement is visible.
+  const fingerstickMarkers: CgmMarker[] = fingersticks24h.map((fs, i) => {
     const sourceLabel = SOURCE_LABEL[fs.source] ?? fs.source
     const detail = fs.mealMarker
       ? `${fs.mealMarker} · ${sourceLabel}`
@@ -45,9 +85,8 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       value: fs.mmol,
     }
   })
-  const toG = (mmol: number) => (unit === 'mmol/L' ? +mmol.toFixed(1) : Math.round(mmol * MMOL_TO_MGDL))
 
-  // Compute TIR from the same 24h window we're charting (consistent with what the user sees).
+  // ─── TIR (CGM-only, computed from the same 24h the chart shows) ────────
   const counts = { below: 0, inRange: 0, above: 0 }
   for (const p of cgm24h) {
     if (p.mmol < GLUCOSE_LO) counts.below++
@@ -61,6 +100,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
     above: total > 0 ? Math.round((counts.above / total) * 100) : 0,
   }
 
+  const cgmLive = latest.cgm !== null
   const arrow = latest.cgm
     ? latest.cgm.trendDir === 'rising'
       ? <ArrowUp size={22} />
@@ -74,7 +114,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       <PanelHeader
         icon={<Droplet size={18} />}
         title="Glucose"
-        source="nightscout"
+        source={cgmLive ? 'nightscout' : latestFingerstick ? 'manual' : 'nightscout'}
         accent="var(--purple)"
         right={
           <div className="seg unit-seg">
@@ -83,9 +123,11 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
           </div>
         }
       />
+
+      {/* ─── Headline + TIR/placeholder row ───────────────────────────── */}
       <div className="glucose-top">
         <div className="glucose-now">
-          {latest.cgm ? (
+          {cgmLive && latest.cgm ? (
             <>
               <div className="g-now-val" style={{ color: STATUS_COLOR[st.glucose(latest.cgm.value)] }}>
                 {toG(latest.cgm.value)}
@@ -94,46 +136,106 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
               <div className="g-now-unit">{unit} · {latest.cgm.trendDir}</div>
               <div className="g-now-meta">Updated {fmtUpdated(latest.cgm.at)}</div>
             </>
+          ) : latestFingerstick ? (
+            // Fallback "now" — latest fingerstick. Coloured by st.glucose.
+            // Source-agnostic so manual + Contour both surface here.
+            <>
+              <div className="g-now-val" style={{ color: STATUS_COLOR[st.glucose(latestFingerstick.mmol)] }}>
+                {toG(latestFingerstick.mmol)}
+              </div>
+              <div className="g-now-unit">
+                {unit} ·{' '}
+                {latestFingerstick.mealMarker ?? 'fingerstick'}
+              </div>
+              <div className="g-now-meta">
+                {fmtAgo(latestFingerstick.time)} ·{' '}
+                {SOURCE_LABEL[latestFingerstick.source] ?? latestFingerstick.source} · no CGM
+              </div>
+            </>
           ) : (
             <>
               <div className="g-now-val" style={{ color: 'var(--text-dim)' }}>—</div>
               <div className="g-now-unit">{unit}</div>
-              <div className="g-now-meta">No recent CGM readings</div>
+              <div className="g-now-meta">No recent glucose readings</div>
             </>
           )}
         </div>
-        <div className="glucose-tir">
-          <Donut
-            size={132}
-            thickness={18}
-            segments={[
-              { value: tir.inRange, color: 'var(--teal)' },
-              { value: tir.above, color: 'var(--amber)' },
-              { value: tir.below, color: 'var(--red)' },
-            ]}
-            centerLabel={`${tir.inRange}%`}
-            centerSub={total > 0 ? 'in range (24h)' : 'no data'}
-          />
-          <div className="tir-legend">
-            <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--amber)' }} />Above {toG(GLUCOSE_HI)}<b>{tir.above}%</b></div>
-            <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--teal)' }} />In range<b>{tir.inRange}%</b></div>
-            <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--red)' }} />Below {toG(GLUCOSE_LO)}<b>{tir.below}%</b></div>
+
+        {cgmLive && total > 0 ? (
+          <div className="glucose-tir">
+            <Donut
+              size={132}
+              thickness={18}
+              segments={[
+                { value: tir.inRange, color: 'var(--teal)' },
+                { value: tir.above, color: 'var(--amber)' },
+                { value: tir.below, color: 'var(--red)' },
+              ]}
+              centerLabel={`${tir.inRange}%`}
+              centerSub="in range (24h)"
+            />
+            <div className="tir-legend">
+              <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--amber)' }} />Above {toG(GLUCOSE_HI)}<b>{tir.above}%</b></div>
+              <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--teal)' }} />In range<b>{tir.inRange}%</b></div>
+              <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--red)' }} />Below {toG(GLUCOSE_LO)}<b>{tir.below}%</b></div>
+            </div>
           </div>
-        </div>
+        ) : (
+          // CGM-absent placeholder — replaces the 0/0/0 donut. Honest
+          // "no CGM data" state; TIR needs a sensor.
+          <div className="glucose-tir-empty">
+            <div className="glucose-tir-empty-label">Time in range</div>
+            <div className="glucose-tir-empty-note">Needs CGM data</div>
+          </div>
+        )}
       </div>
-      <div className="chart-caption">
-        <span>Last 24 hours</span>
-        <span className="muted-note">target band {toG(GLUCOSE_LO)}–{toG(GLUCOSE_HI)} {unit}</span>
-      </div>
-      <CGMChart
-        data={cgm24h.map((p) => ({ time: new Date(p.time), value: p.mmol }))}
-        lo={GLUCOSE_LO}
-        hi={GLUCOSE_HI}
-        unit={unit}
-        toDisplay={toG}
-        height={216}
-        markers={fingerstickMarkers}
-      />
+
+      {/* ─── Chart area: CGM trace (with fingerstick overlay) OR fallback list ── */}
+      {cgmLive ? (
+        <>
+          <div className="chart-caption">
+            <span>Last 24 hours</span>
+            <span className="muted-note">target band {toG(GLUCOSE_LO)}–{toG(GLUCOSE_HI)} {unit}</span>
+          </div>
+          <CGMChart
+            data={cgm24h.map((p) => ({ time: new Date(p.time), value: p.mmol }))}
+            lo={GLUCOSE_LO}
+            hi={GLUCOSE_HI}
+            unit={unit}
+            toDisplay={toG}
+            height={216}
+            markers={fingerstickMarkers}
+          />
+        </>
+      ) : recentFingerstickList.length > 0 ? (
+        <>
+          <div className="chart-caption">
+            <span>Recent fingersticks</span>
+            <span className="muted-note">target {toG(GLUCOSE_LO)}–{toG(GLUCOSE_HI)} {unit} · no CGM in last 24h</span>
+          </div>
+          <ul className="glucose-fs-list">
+            {recentFingerstickList.map((fs, i) => {
+              const status = st.glucose(fs.mmol)
+              const sourceLabel = SOURCE_LABEL[fs.source] ?? fs.source
+              return (
+                <li key={`${fs.time.getTime()}-${i}`} className="glucose-fs-row">
+                  <span className="glucose-fs-dot" style={{ background: STATUS_COLOR[status] }} />
+                  <span className="glucose-fs-time">{fmtListTime(fs.time)}</span>
+                  <span className="glucose-fs-val" style={{ color: STATUS_COLOR[status] }}>
+                    {toG(fs.mmol)}
+                    <span className="glucose-fs-unit">{unit}</span>
+                  </span>
+                  <span className="glucose-fs-tag">
+                    {fs.mealMarker ?? '—'} · {sourceLabel}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      ) : (
+        <div className="empty-note">No glucose readings in this window</div>
+      )}
     </Card>
   )
 }

@@ -11,7 +11,24 @@ interface Props {
   fill?: boolean
 }
 
-/** Tiny inline sparkline — no axes, no tooltip. Ported from 06-charts.jsx. */
+// Vertical padding inside the SVG: the line + bezier control points stay
+// inside a [PAD_Y, height - PAD_Y] band, leaving room so smoothPath
+// overshoot can't cross the viewport edge and so the final-point dot
+// (r=2.6) isn't clipped.
+const PAD_Y = 4
+
+/**
+ * Tiny inline sparkline — no axes, no tooltip. Ported from 06-charts.jsx
+ * with two fixes from dashboard-7.1-fixes-spec_2026-06-25 Part 3:
+ *   1. SVG is now `overflow: hidden` (was 'visible' — bezier overshoot on
+ *      sparse data bled out of the tile, visibly on the BP KPI).
+ *   2. ≤2 points render a SHORT FLAT CENTERED segment instead of a steep
+ *      diagonal across the viewport — sparse series (e.g. BP measured a
+ *      couple of times in two weeks) no longer scream visual change that
+ *      isn't there.
+ * The line's y range is also padded so bezier control points stay
+ * comfortably inside the viewport.
+ */
 export function Sparkline({
   data,
   color = 'var(--teal)',
@@ -22,15 +39,42 @@ export function Sparkline({
   const gid = useMemo(() => 'spark' + Math.random().toString(36).slice(2), [])
   if (!data || data.length === 0) return null
 
+  const n = data.length
+
+  // ─── Sparse-data branch: ≤2 points → short flat centered segment ────
+  // Honest about "not enough to draw a trend" without drawing nothing.
+  // The dot marks the latest value's position; the line is decorative.
+  if (n <= 2) {
+    const cy = height / 2
+    const x0 = width * 0.25
+    const x1 = width * 0.75
+    return (
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ display: 'block', overflow: 'hidden' }}
+      >
+        <line
+          x1={x0} y1={cy} x2={x1} y2={cy}
+          stroke={color} strokeWidth={2} strokeLinecap="round" opacity={0.45}
+        />
+        <circle cx={x1} cy={cy} r={2.6} fill={color} />
+      </svg>
+    )
+  }
+
+  // ─── Normal branch: ≥3 points ────────────────────────────────────────
   const min = Math.min(...data)
   const max = Math.max(...data)
   const pad = (max - min) * 0.15 || 1
   const lo = min - pad
   const hi = max + pad
-  const n = data.length
+  // Plot inside [PAD_Y, height - PAD_Y] so bezier overshoot can't escape.
+  const innerH = height - 2 * PAD_Y
   const pts = data.map((v, i) => ({
     x: (i / Math.max(1, n - 1)) * width,
-    y: height - ((v - lo) / (hi - lo)) * height,
+    y: PAD_Y + (innerH - ((v - lo) / (hi - lo)) * innerH),
   }))
   const d = smoothPath(pts)
 
@@ -39,7 +83,7 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      style={{ display: 'block', overflow: 'visible' }}
+      style={{ display: 'block', overflow: 'hidden' }}
     >
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">

@@ -34,7 +34,7 @@ export default async function DashboardPage() {
     fetchRecentManual(20),
     fetchBaselinesPayload(),
     fetchLatestSpo2Night(),
-    fetchFingersticks(24),
+    fetchFingersticks(14),
   ])
   const latest = await fetchLatestKpis(cgm24h)
 

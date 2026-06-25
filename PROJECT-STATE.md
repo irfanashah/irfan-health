@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-24 (session: Contour fingerstick parser + CGM-trace fingerstick markers)_
+_Last updated: 2026-06-25 (session: 7.1 dashboard fixes — Whoop wake-day attribution bug + Glucose fingerstick fallback + KPI sparkline overflow)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-Contour Next One fingerstick parser shipped on top of the existing file-drop pipeline (cron + Drive pull + validate/parse/ingest/move already generic). Writes `glucose_fingerstick` rows shaped identically to Slice 3 manual entry (`metric_type='glucose_fingerstick'`, `data_shape='discrete'`, canonical mmol/L), plus `extras` enrichment (`meal_marker`, `data_source`, `notes`). `source_record_id` timestamp+value keyed for idempotency on re-drop. **No new migration table** — only a one-line `sources` seed (`migration_006_contour_source.sql`, idempotent). **Part 2 shipped too:** `CGMChart` markers extended with a `'fingerstick'` kind that value-anchors at the meter's own reading (NOT snapped to the CGM curve) so meter-vs-sensor agreement is visible at a glance; `fetchFingersticks(24)` reader added; Glucose panel wired. `npm run build` clean — 27 routes.
+Three live-eyeballed issues fixed. **Part 1 was a real data-correctness bug** — `daily_metrics`'s `whoop_daily` CTE bucketed recovery/RHR/HRV/strain by `period_end` which is the CYCLE end, not the wake morning. Any cycle ending after GST midnight mis-dated to the next day, collided, and dropped the correct day to NULL — scattered gaps on RHR/HRV/Recovery charts AND corrupt drift baselines (the `metric_drift` view reads these). Fixed at the view layer (`whoop_wake` CTE derives wake from each cycle's main sleep; recovery family JOINs on `period_start`). No data migration, no re-ingestion. **Part 2:** Glucose panel now has a fingerstick fallback — latest fingerstick as headline "now" + recent-readings list + "Needs CGM data" TIR placeholder when no recent CGM. **Part 3:** KPI sparkline now `overflow: hidden` + ≤2-point short-circuit → BP sparkline no longer bleeds out of its tile. `npm run build` clean — 27 routes.
 
 ## Slice ledger
 - ✅ Slice 0 — Scaffold · ✅ 1 Whoop · ✅ 1.5/1.6 backfill+refill · ✅ 2 Withings BP
@@ -14,39 +14,49 @@ Contour Next One fingerstick parser shipped on top of the existing file-drop pip
 - ✅ Slice 7.1 — Trend dashboard (baseline)
 - ✅ Slice 7.2 — Connections (Correlation Explorer + Cardiac Readiness + cross-source views)
 - ✅ Slice 7.3 — Personal Baseline & Drift Engine
-- ✅ SpO2 dashboard surfacing (Slice 4 follow-on)
+- ✅ SpO2 dashboard surfacing
 - ✅ Slice 7.3R — Baselines & drift redesign + tab move (Claude Design port)
 - ✅ Oxylink desaturation — ODI + time-below-90 + overnight curve + Overnight Oxygen panel + true event markers + Today min-SpO2 tile
-- ✅ **Contour fingerstick parser + CGM-trace fingerstick markers** (Slice 4 follow-on)
+- ✅ Contour fingerstick parser + CGM-trace fingerstick markers
+- ✅ **Dashboard 7.1 fixes — Whoop wake-day attribution + Glucose fingerstick fallback + KPI sparkline overflow**
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose low floors + ODI severity bands; Slice 6 — Labs PDF (rides file-drop pipeline); med-adherence + meal-logging paths; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived fasting — deferred follow-on)
 
 ## Data state
-- **Whoop:** complete, Diagnose gap = 0; 6-hourly cron clean.
+- **Whoop:** complete, Diagnose gap = 0; 6-hourly cron clean. (View now attributes recovery/RHR/HRV/strain by wake day correctly — no re-ingestion needed.)
 - **Withings:** `bp_readings` complete, Diagnose gap = 0; 12-hourly cron clean. (BP only — weight extension queued.)
 - **Manual:** live on Vercel; smoke test passed.
-- **Nightscout (CGM):** `glucose_cgm` = 2,995 rows, Diagnose gap = 0 (last 30 d); 12-hourly cron live.
-- **Oxylink (overnight SpO2 + desaturation):** 7 nights ingested via the new shape (`spo2_overnight_avg`, `_min`, `_odi`, `_time_below_90_pct`, `_overnight_curve` + `desaturation_events`). ODI 5.5–9.1 / h (mild band). File-drop pipeline live (10:00 + 21:00 GST).
-- **Contour fingerstick:** parser + registry + source-seed shipped; awaiting first Drive drop. Real export `Patient's_BG_data_Irfan_Shah_6_24_2026.csv` has 57 readings (05/04→06/24 2026) — all 90–141 mg/dL, none expected to filter.
-- **`daily_metrics` view:** 12 metric exposure (8 v1 + 2 SpO2 + 2 desat). Unchanged this slice.
-- **`metric_drift` view:** 12 signals. Unchanged this slice (fingersticks are not drift-able — they're sparse events, not daily metrics).
+- **Nightscout (CGM):** `glucose_cgm` = 2,995 rows, last write May 2026; live xDrip+/G7 capture pending new sensor. The Glucose panel's fingerstick fallback now handles this stale-CGM state gracefully.
+- **Oxylink (overnight SpO2 + desaturation):** 7 nights ingested via the new shape; file-drop pipeline live (10:00 + 21:00 GST).
+- **Contour fingerstick:** 57 readings ingested (05/04 → 06/24 2026).
+- **`daily_metrics` view:** wake-day attribution corrected for the Whoop recovery family. 12 metric exposure unchanged.
+- **`metric_drift` view:** unchanged in this slice. Drift baselines for RHR + HRV will recompute on the corrected data the next time the dashboard pulls.
 
 ## Next action
-1. **Run `migration_006_contour_source.sql`** in Supabase (one INSERT, idempotent).
-2. **Create `inbox/contour/` in Drive**, drop `Patient's_BG_data_Irfan_Shah_6_24_2026.csv` there.
-3. **Wait for the next file-drop cron tick** (10:00 / 21:00 GST) or trigger manually (`curl -H "Authorization: Bearer $CRON_SECRET" https://irfan-health.vercel.app/api/cron/file-drop`). Expect ~57 `glucose_fingerstick` rows written (`source_slug='contour'`), file moved to `processed/contour/`, one row on `/diagnostics`.
-4. **Eyeball the deploy**: Glucose panel's 24h CGM trace should show teal diamond markers at the meter's own values for any fingerstick within the last 24 h (typically the morning fasting reading); hover any diamond shows meter value + CGM value at the same time + meal marker / source. Manual fingersticks from `/log` should ALSO appear automatically (the reader is source-agnostic).
-5. Once green, the next slot is the **Withings weight extension** (small — unblocks the Weight panel + Correlation Explorer's Weight metric + Slice 7.3 weight-drift).
+1. **Re-run `migration_003_daily_metrics_view.sql`** in Supabase (CREATE OR REPLACE only — no data change).
+2. **Verify the fix:**
+   ```sql
+   SELECT date, recovery, rhr, hrv, strain
+   FROM daily_metrics
+   WHERE date IN ('2026-06-05','2026-06-10');
+   ```
+   Expect **Jun 5 recovery = 71**, **Jun 10 recovery = 63** (matching the Whoop app).
+3. **Eyeball the deploy:**
+   - Recovery and RHR/HRV charts should fill in (no more scattered empty days where Whoop has data).
+   - Baselines & drift tab's RHR + HRV signals recompute on corrected data.
+   - Glucose panel: with CGM stale, the headline now shows your latest Contour fingerstick + a recent-readings list + a "Needs CGM data" placeholder instead of 0/0/0.
+   - BP KPI sparkline stays inside its tile (no diagonal bleed).
+4. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)
 - **Anchor population** — `/baselines` set-anchor form is built; populate post-rehab.
-- **Confirm Dr. Jose floors + ODI severity bands** — `LOW_FLOORS` (rhr <50 / sys <90 / dia <60 / spo2_avg <92 / spo2_min <88) + `st.odi(v)` band (<5 normal · 5–<15 mild · ≥15 concern) all provisional; replace once Dr. Jose lands on the right numbers.
+- **Confirm Dr. Jose floors + ODI severity bands** — `LOW_FLOORS` + `st.odi(v)` band all provisional.
 - **Withings weight extension** — small follow-on.
-- **Fasting cross-check (Contour vs CGM-derived)** — deferred follow-on flagged in the parser spec. Contour's `Fasting`-marked readings vs `daily_metrics.fasting` (CGM-derived) — potentially its own drift signal. Touches the view + maybe drift-config; spec separately if wanted.
-- **Range-wide meter-vs-sensor view** — the Glucose panel's CGM trace is fixed 24h, so fingerstick markers only show today's overlap. A range-wide comparison would be a separate enhancement.
-- **xDrip+ ongoing CGM capture** — new G7 sensor pending, then confirm one live reading lands.
-- **`daily_metrics` + `metric_drift` views both scan full history per query** — trivial at current volume; future perf item once CGM accrues months.
-- No cron failure alerting — small slice before clinical reliance.
+- **Fasting cross-check (Contour vs CGM-derived)** — deferred follow-on.
+- **Range-wide meter-vs-sensor view** — Glucose panel's CGM trace is fixed 24h.
+- **xDrip+ ongoing CGM capture** — new G7 sensor pending.
+- **Daily / metric_drift views scan full history** — future perf item once CGM accrues months.
+- No cron failure alerting.
 - `middleware.ts` → `proxy.ts` rename (Next 16 deprecation warning only).
 - Orphan `ingestion_log` rows from timed-out runs — harmless.
-- **CLAUDE.md cleanup carry-over** — "two stale Slice 4 parked lines (~99 + ~251)" from the 7.3R closeout brief — couldn't locate them; not retried this pass.
+- **CLAUDE.md cleanup carry-over** — "two stale Slice 4 parked lines (~99 + ~251)" from the 7.3R closeout brief — still couldn't locate them.

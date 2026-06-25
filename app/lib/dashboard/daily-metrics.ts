@@ -361,12 +361,18 @@ export interface FingerstickPoint {
 /**
  * Recent fingerstick readings — surfaces both the Contour parser and the
  * Slice 3 manual entry path (both write `metric_type='glucose_fingerstick'`),
- * so manual fingersticks start appearing as markers automatically. Sparse
+ * so manual fingersticks start appearing on the panel automatically. Sparse
  * by nature (typically 1–4/day), well under Supabase's 1000-row cap.
+ *
+ * Default 14d window feeds two callers in one fetch:
+ *   - Glucose panel overlay diamonds: caller slices the last 24h.
+ *   - Glucose panel fingerstick fallback (no recent CGM): caller takes
+ *     the head of the list as "now" + the top ~10 as a recent-readings list.
+ * Returned in ascending time order (oldest first).
  */
-export async function fetchFingersticks(hours: number = 24): Promise<FingerstickPoint[]> {
+export async function fetchFingersticks(daysBack: number = 14): Promise<FingerstickPoint[]> {
   const supabase = createServiceClient()
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
   const { data, error } = await supabase
     .from('health_observations')
     .select('recorded_at, canonical_value, extras, source_slug')

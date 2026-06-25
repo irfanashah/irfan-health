@@ -125,23 +125,65 @@ weight_daily AS (
 ),
 
 -- ----------------------------------------------------------------
--- 4. Whoop daily metrics. Attribution = (period_end AT TIME ZONE 'Asia/Dubai')::date
---    — the day you wake up; matches Whoop's UI. In-progress cycles have
---    NULL period_end (gotcha #17), so they're naturally excluded.
+-- 4. Whoop daily metrics. ATTRIBUTION = wake day of the cycle's main sleep.
+--
+--    CRITICAL bug fix (dashboard-7.1-fixes-spec_2026-06-25.md):
+--    These rows (recovery_score / hrv_rmssd / heart_rate_resting /
+--    strain_score) carry `period_end = CYCLE end` (= the next evening,
+--    when Whoop closes the cycle) — NOT the wake morning. The previous
+--    implementation bucketed by (period_end AT TIME ZONE 'Asia/Dubai')::date,
+--    so any cycle ending after GST midnight got mis-dated to the next day
+--    and collided with that day's own reading; MAX() kept one, the
+--    correct day was left empty → scattered gaps in the RHR/HRV +
+--    Recovery charts (and corrupt drift baselines, since `metric_drift`
+--    reads `rhr`/`hrv` from here).
+--
+--    Worked example from live data:
+--      Jun 5 recovery = 71 → period_end 2026-06-05 21:42 UTC → GST Jun 6
+--        → collided with Jun 6's recovery=38; MAX kept 71 on Jun 6.
+--        Jun 5 left empty on the chart.
+--
+--    The fix: derive the cycle's wake_day from the cycle's MAIN sleep
+--    (`metric_type = 'sleep_duration_total'` — its own period_end IS the
+--    wake morning, so AT TIME ZONE 'Asia/Dubai'::date is correct). All
+--    four metrics + the sleep share the cycle's `period_start` (e.g. the
+--    Jun 5 recovery and Jun 5 sleep both period_start = 2026-06-04
+--    19:14:40.64+00), so we join recovery-family rows back to wake_day
+--    by period_start.
+--
+--    Edge cases (rare, intentional):
+--      - A cycle with recovery but no main sleep (`sleep_duration_total`)
+--        → the JOIN drops it; can't honestly attribute without a wake
+--        time. If this shows up in practice, switch to LEFT JOIN + a
+--        defensible fallback.
+--      - Two cycles waking the same GST day (split sleep / nap-as-main)
+--        → MAX keeps the higher; acceptable until it bites.
+--      - In-progress cycles (gotcha #17) have NULL period_end → no row
+--        in `whoop_wake`, naturally excluded.
 -- ----------------------------------------------------------------
-whoop_daily AS (
-  SELECT
-    (period_end AT TIME ZONE 'Asia/Dubai')::date AS date,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'recovery_score')      AS recovery,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'hrv_rmssd')           AS hrv,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'heart_rate_resting')  AS rhr,
-    MAX(canonical_value) FILTER (WHERE metric_type = 'strain_score')        AS strain
+whoop_wake AS (
+  -- Wake day per cycle, from the main sleep's wake time.
+  SELECT period_start,
+         (period_end AT TIME ZONE 'Asia/Dubai')::date AS wake_day
   FROM health_observations
   WHERE source_slug = 'whoop'
-    AND data_shape  = 'daily_summary'
+    AND metric_type = 'sleep_duration_total'
+    AND period_start IS NOT NULL
     AND period_end IS NOT NULL
-    AND metric_type IN ('recovery_score','hrv_rmssd','heart_rate_resting','strain_score')
-  GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date
+),
+whoop_daily AS (
+  SELECT
+    w.wake_day AS date,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'recovery_score')      AS recovery,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'hrv_rmssd')           AS hrv,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'heart_rate_resting')  AS rhr,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'strain_score')        AS strain
+  FROM health_observations o
+  JOIN whoop_wake w ON w.period_start = o.period_start
+  WHERE o.source_slug = 'whoop'
+    AND o.data_shape  = 'daily_summary'
+    AND o.metric_type IN ('recovery_score','hrv_rmssd','heart_rate_resting','strain_score')
+  GROUP BY w.wake_day
 ),
 
 -- ----------------------------------------------------------------
