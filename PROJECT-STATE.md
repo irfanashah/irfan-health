@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-25 (session: Slice 6 — Labs PDF import + LLM extraction + human review + Labs section with key-marker trends)_
+_Last updated: 2026-06-26 (session: labs large-file upload fix — direct-to-Storage + mixed-document prompt)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-Slice 6 (the biggest on the platform) ships. New `/labs` flow: upload a PDF → hybrid extraction (text-layer-first via `unpdf` → exact text to Anthropic with strict "do NOT alter/round/infer" prompt; vision fallback for scanned PDFs) → editable draft review → confirm → write to `lab_panels` + `lab_values` + persist learned `raw_marker_name → marker_slug` aliases to `lab_marker_aliases`. **Format-agnostic by design** (no Fakeeh hard-coding — the LLM prompt makes no layout assumptions; the alias table makes the importer get smarter per-source over time). Curated cardiac-first marker registry handles canonical conversions deterministically (cholesterol mg/dL↔mmol/L, glucose ÷18, etc.); unknown units flag in UI, never guess. `/labs` section renders the panels list (chronological, expandable, out-of-range highlighted) + key-marker trend charts (LDL/HDL/non-HDL/triglycerides/Lp(a)/ApoB/hs-CRP/HbA1c/fasting glucose + picker for any ≥2-draw marker). `npm run build` clean — 28 routes (+`/labs`). New deps: `@anthropic-ai/sdk`, `unpdf`.
+`/labs` upload was failing on PDFs > 1 MB (the STEMI discharge summary at 2.05 MB returned a bare 404). **Root cause confirmed:** the original `uploadAndExtract(formData)` routed file bytes through a Next.js server action, which silently caps request bodies at 1 MB (Vercel additionally caps full requests at ~4.5 MB). Durable fix shipped: **direct-to-browser-to-Storage upload** in two steps — `createLabUploadUrl(filename)` server action returns a signed Storage URL; browser uploads to Storage; `extractFromStorage(path)` server action downloads + extracts. File bytes never traverse a server action. Bypasses BOTH the 1 MB and ~4.5 MB limits — handles any realistic lab/discharge PDF up to the bucket's 25 MB cap. Also: `maxDuration=800` on the `/labs` segment (extract inherits); `SYSTEM_PROMPT` broadened for mixed clinical documents (discharge summaries / consult notes with labs embedded among narrative — extract labs, ignore non-lab content, surface ambiguous draw dates); `max_tokens` raised to 16k + truncation guard. No schema / alias / commit / trends change.
 
 ## Slice ledger
 - ✅ Slices 0–5 (sources + ingestion + manual + CGM) · ⊘ 5a Dexcom Clarity (DEFERRED)
@@ -16,7 +16,8 @@ Slice 6 (the biggest on the platform) ships. New `/labs` flow: upload a PDF → 
 - ✅ Whoop SpO2 rename → `spo2_whoop` + skin_temp add
 - ✅ Two-fix patch (TrendChart isolated-point dots + TodayAtAGlance glucose fingerstick fallback)
 - ✅ Cardiac BP chart — ACC/AHA per-metric zones + combined category readout
-- ✅ **Slice 6 — Labs PDF import (LLM extraction + human review + Labs section with trends)**
+- ✅ Slice 6 — Labs PDF import (LLM extraction + human review + Labs section with trends)
+- ✅ **Labs large-file fix — direct-to-Storage upload + mixed-document prompt**
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose floors + ODI severity + skin_temp threshold; lab markers as drift metrics; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived)
 
@@ -28,12 +29,12 @@ Unchanged for existing sources. **New surface area**:
 - **Storage bucket required:** `lab-reports` (private, ~25 MB limit) — created in the Supabase Studio UI, NOT via migration (storage DDL isn't user-writeable in SQL editor).
 
 ## Next action
-**In order:**
-1. **Set `ANTHROPIC_API_KEY`** in Vercel env vars (and add to `.env.local` for local dev). Without this, the upload route shows a clear error.
-2. **Run `migration_008_labs.sql`** in Supabase (seeds `labs` source + creates `lab_marker_aliases` + RLS).
-3. **Create the `lab-reports` Storage bucket** in Supabase Studio → Storage → New bucket. Name: `lab-reports`, public: false, file-size limit: 25 MB.
-4. **Test the flow:** open `/labs`, upload `lab-reports/lab_report_pdf.pdf` (the Fakeeh electrolyte panel). Expect: draft tagged `text` path, 4 markers (sodium, potassium, chloride, bicarbonate), sodium flagged `L` (133 vs 136–145). Review + commit. Verify in Supabase: 1 row in `lab_panels`, 4 in `lab_values`, ~4 in `lab_marker_aliases`. Panels list shows the new panel. Trends section is still empty (electrolytes aren't key cardiac markers — upload a lipid panel next to populate the curated charts).
-5. **Upload a second report from a different lab** (whenever one's available) to validate the format-agnostic design + alias learning across sources.
+**No new migrations / no env changes.** Re-upload the 2 MB `dischargesummary1_pdf.pdf` at `/labs` after the push lands:
+1. Should upload (direct-to-Storage; no 404).
+2. Should extract embedded admission labs from the discharge summary narrative (troponin / CK-MB / hemogram / lipid panel / chemistries — whatever the STEMI workup printed).
+3. Should reach the review draft with `dateAmbiguous: true` if the document doesn't clearly distinguish the lab collection date from the admission/discharge dates.
+4. Review + commit. Verify rows land in `lab_panels` + `lab_values` and the cardiac key-marker trends populate (LDL / HDL / triglycerides etc. if the STEMI workup included a lipid panel).
+5. The existing Fakeeh single-panel uploads continue to work identically (small files go through the same two-step flow, no regression).
 6. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)

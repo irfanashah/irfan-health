@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, CheckCircle2, FileText, Upload } from 'lucide-react'
 import {
-  uploadAndExtract,
+  createLabUploadUrl,
+  extractFromStorage,
   commitPanel,
   type LabPanelRow,
   type MarkerTrend,
@@ -14,6 +15,10 @@ import type { ExtractionDraft, DraftValue } from './_lib/types'
 import { ALL_MARKER_SLUGS, getMarker } from './_lib/markers'
 import { PanelsList } from './PanelsList'
 import { MarkerTrends } from './MarkerTrends'
+import { createClient as createBrowserSupabase } from '@/lib/supabase/client'
+
+/** Hard client-side cap. Mirrors the bucket's 25 MB limit. */
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 interface Props {
   initialPanels: LabPanelRow[]
@@ -90,12 +95,57 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
     setCommitError(null)
   }
 
-  async function onUpload(formData: FormData) {
+  // Two-step upload:
+  //   1. Ask the server for a signed upload URL (small request — no file bytes).
+  //   2. Upload the PDF DIRECTLY to Supabase Storage from the browser
+  //      (bypasses the 1 MB Next.js server-action limit AND the ~4.5 MB
+  //      Vercel request ceiling).
+  //   3. Tell the server "this path is now in Storage; extract it" → the
+  //      server downloads it back, runs the hybrid extraction, returns
+  //      the draft. The Storage object stays — it IS the raw_file_ref
+  //      audit trail.
+  async function onUpload(file: File | null) {
     setUploadError(null)
     setCommitOk(null)
     setCommitError(null)
+    if (!file || file.size === 0) {
+      setUploadError('No file selected.')
+      return
+    }
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Only PDF files are accepted.')
+      return
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError(`File too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Max 25 MB.`)
+      return
+    }
     startTransition(async () => {
-      const res = await uploadAndExtract(formData)
+      // Step 1: signed URL
+      const urlRes = await createLabUploadUrl(file.name)
+      if (!urlRes.ok) {
+        setUploadError(urlRes.error)
+        return
+      }
+      // Step 2: browser → Storage direct upload
+      try {
+        const supabase = createBrowserSupabase()
+        const { error: upErr } = await supabase.storage
+          .from('lab-reports')
+          .uploadToSignedUrl(urlRes.path, urlRes.token, file, {
+            contentType: 'application/pdf',
+            upsert: false,
+          })
+        if (upErr) {
+          setUploadError(`Storage upload failed: ${upErr.message}`)
+          return
+        }
+      } catch (err) {
+        setUploadError(`Storage upload failed: ${(err as Error).message}`)
+        return
+      }
+      // Step 3: server-side extract
+      const res = await extractFromStorage(urlRes.path)
       if (!res.ok) {
         setUploadError(res.error)
         return
@@ -183,7 +233,8 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
           onSubmit={(e) => {
             e.preventDefault()
             const fd = new FormData(e.currentTarget)
-            onUpload(fd)
+            const file = fd.get('file') as File | null
+            onUpload(file)
           }}
           className="labs-upload-form"
         >
@@ -196,7 +247,7 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
             className="labs-file-input"
           />
           <button type="submit" disabled={busy} className="labs-btn labs-btn-primary">
-            {busy && !draft ? 'Extracting…' : 'Upload + extract'}
+            {busy && !draft ? 'Uploading + extracting…' : 'Upload + extract'}
           </button>
         </form>
         {uploadError && (

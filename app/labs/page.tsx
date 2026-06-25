@@ -6,6 +6,12 @@ import { LabsClient } from './LabsClient'
 import { fetchAllPanels, fetchAllMarkerTrends } from './actions'
 import './labs.css'
 
+// Server actions invoked from this route segment inherit this ceiling.
+// `extractFromStorage` calls Anthropic (vision path on big multi-page
+// scans can take a while); 800s matches the platform's other heavy
+// routes (refill/diagnose) and the Pro plan's function maxDuration cap.
+export const maxDuration = 800
+
 export default async function LabsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

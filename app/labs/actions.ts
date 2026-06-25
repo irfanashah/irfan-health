@@ -2,19 +2,30 @@
 
 // Labs slice — server actions.
 //
-//   uploadAndExtract(formData)  — accepts the uploaded PDF, stores it in
-//                                 Storage, runs the hybrid LLM extraction,
-//                                 applies learned aliases, returns the draft
-//                                 + the Storage path. Nothing is committed
-//                                 to lab_panels/lab_values here — the user
-//                                 confirms the draft in the review UI first.
+//   createLabUploadUrl(filename) — issue a signed Storage upload URL so the
+//                                  browser can put the PDF directly into the
+//                                  `lab-reports` bucket WITHOUT routing the
+//                                  file bytes through a server action (gotcha:
+//                                  Next.js server actions cap request bodies
+//                                  at 1 MB; Vercel caps full requests at
+//                                  ~4.5 MB regardless). The browser never
+//                                  sees a Storage anon key — just a one-shot
+//                                  token scoped to this path.
 //
-//   commitPanel(payload)        — writes lab_panels + lab_values (raw +
-//                                 canonical preserved) + ingestion_log, AND
-//                                 persists new/confirmed raw_marker_name →
-//                                 marker_slug pairs into lab_marker_aliases.
-//                                 Both writes happen serverside, never auto-
-//                                 triggered.
+//   extractFromStorage(path)     — server downloads the just-uploaded PDF
+//                                  from Storage, runs the hybrid LLM
+//                                  extraction (text-layer-first, vision
+//                                  fallback), overlays learned aliases, and
+//                                  returns the draft. File stays in Storage
+//                                  as the `raw_file_ref` audit trail — no
+//                                  double-store, no temp files.
+//
+//   commitPanel(payload)         — writes lab_panels + lab_values (raw +
+//                                  canonical preserved) + ingestion_log AND
+//                                  persists new/confirmed raw_marker_name →
+//                                  marker_slug pairs into lab_marker_aliases.
+//                                  Both writes happen serverside, never auto-
+//                                  triggered.
 
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -33,7 +44,58 @@ async function requireSession() {
   return user
 }
 
-// ─── Upload + extract ────────────────────────────────────────────────────
+// ─── Signed upload URL (step 1 of the two-step browser → Storage flow) ──
+
+export interface SignedUploadResult {
+  ok: true
+  /** Storage path (becomes `raw_file_ref` on commit). */
+  path: string
+  /** One-shot signed-upload token. Client passes this to uploadToSignedUrl. */
+  token: string
+}
+export interface SignedUploadError {
+  ok: false
+  error: string
+}
+
+/**
+ * Issue a signed upload URL so the browser uploads the PDF directly to
+ * Supabase Storage. The server still controls the path (server-generated
+ * date + epoch + safe filename) so the client can't pollute the bucket
+ * layout. The token is single-use and scoped to this exact path.
+ */
+export async function createLabUploadUrl(
+  filename: string
+): Promise<SignedUploadResult | SignedUploadError> {
+  try {
+    await requireSession()
+    if (!filename || typeof filename !== 'string') {
+      return { ok: false, error: 'Filename is required.' }
+    }
+    if (!filename.toLowerCase().endsWith('.pdf')) {
+      return { ok: false, error: 'Only PDF files are accepted.' }
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(-80)
+    const path = `${today}/${Date.now()}-${safeName}`
+
+    const supabase = createServiceClient()
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUploadUrl(path)
+    if (error || !data) {
+      return {
+        ok: false,
+        error: `Could not create signed upload URL: ${error?.message ?? 'unknown'}. Is the "${STORAGE_BUCKET}" Storage bucket created?`,
+      }
+    }
+    return { ok: true, path: data.path, token: data.token }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+}
+
+// ─── Extract from Storage (step 2) ───────────────────────────────────────
 
 export interface ExtractResult {
   ok: true
@@ -45,43 +107,34 @@ export interface ExtractError {
   error: string
 }
 
-export async function uploadAndExtract(formData: FormData): Promise<ExtractResult | ExtractError> {
+/**
+ * Pull the just-uploaded PDF back from Storage on the server, then run the
+ * existing hybrid extraction. The client passes ONLY the small Storage
+ * path string — the file bytes never traverse the server-action body limit.
+ */
+export async function extractFromStorage(path: string): Promise<ExtractResult | ExtractError> {
   try {
     await requireSession()
-    const file = formData.get('file') as File | null
-    if (!file || file.size === 0) return { ok: false, error: 'No file uploaded.' }
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      return { ok: false, error: 'Only PDF files are accepted.' }
+    if (!path || typeof path !== 'string') {
+      return { ok: false, error: 'Storage path is required.' }
     }
-    const bytes = Buffer.from(await file.arrayBuffer())
-
-    // 1. Store raw file in Storage — `raw_file_ref` audit trail.
-    // Path: <yyyy-mm-dd>/<epoch-ms>-<safe-filename>.pdf so concurrent
-    // uploads on the same day don't collide.
     const supabaseService = createServiceClient()
-    const today = new Date().toISOString().slice(0, 10)
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(-80)
-    const rawFileRef = `${today}/${Date.now()}-${safeName}`
 
-    const uploadResult = await supabaseService.storage
+    // Download the PDF the browser just put into Storage.
+    const { data: blob, error: dlErr } = await supabaseService.storage
       .from(STORAGE_BUCKET)
-      .upload(rawFileRef, bytes, {
-        contentType: 'application/pdf',
-        upsert: false,
-      })
-    if (uploadResult.error) {
-      return {
-        ok: false,
-        error: `Storage upload failed: ${uploadResult.error.message}. Is the "${STORAGE_BUCKET}" bucket created?`,
-      }
+      .download(path)
+    if (dlErr || !blob) {
+      return { ok: false, error: `Could not read PDF from Storage: ${dlErr?.message ?? 'not found'}` }
     }
+    const bytes = Buffer.from(await blob.arrayBuffer())
 
-    // 2. Extract via the hybrid path (text-layer-first, vision fallback).
+    // Hybrid extraction (text-layer-first, vision fallback).
     const rawDraft = await extractLabReport(bytes)
 
-    // 3. Overlay learned aliases — deterministic mappings take precedence
-    //    over the LLM's per-call suggestion. The first commit of a new
-    //    marker name becomes the alias used by every future report.
+    // Overlay learned aliases — deterministic mappings take precedence
+    // over the LLM's per-call suggestion. The first commit of a new
+    // marker name becomes the alias used by every future report.
     const aliasedValues = await applyAliasesToDraft(
       supabaseService,
       rawDraft.values,
@@ -90,7 +143,7 @@ export async function uploadAndExtract(formData: FormData): Promise<ExtractResul
 
     return {
       ok: true,
-      rawFileRef,
+      rawFileRef: path,
       draft: { ...rawDraft, values: aliasedValues },
     }
   } catch (err) {

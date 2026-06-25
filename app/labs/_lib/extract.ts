@@ -63,6 +63,24 @@ function pickToolUseBlock(content: Anthropic.Messages.ContentBlock[]): Anthropic
   return null
 }
 
+/**
+ * Raised one above the model's tool-call ceiling we actually need —
+ * the structured output for a typical multi-page lab/discharge doc fits
+ * comfortably in 16k. If a future report ever truncates, the
+ * stop_reason='max_tokens' guard below surfaces a clear error instead
+ * of returning a malformed/partial draft.
+ */
+const MAX_OUTPUT_TOKENS = 16384
+
+function assertNotTruncated(response: Anthropic.Messages.Message, path: ExtractionPath): void {
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(
+      `Report too long — the extraction was truncated (max_tokens, ${path} path). ` +
+        `Split the report into smaller PDFs and upload separately.`
+    )
+  }
+}
+
 function normaliseDraft(raw: unknown, path: ExtractionPath): ExtractionDraft {
   // Defensive guards even though the tool schema enforces structure.
   const r = raw as RawDraft
@@ -120,7 +138,7 @@ export async function extractLabReport(pdf: Buffer): Promise<ExtractionDraft> {
   if (textLayer) {
     const response = await client.messages.create({
       model: ANTHROPIC_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_OUTPUT_TOKENS,
       system: SYSTEM_PROMPT,
       tools: [EXTRACT_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'tool', name: EXTRACT_TOOL.name },
@@ -139,6 +157,7 @@ export async function extractLabReport(pdf: Buffer): Promise<ExtractionDraft> {
         },
       ],
     })
+    assertNotTruncated(response, 'text')
     const block = pickToolUseBlock(response.content)
     if (!block) {
       throw new Error('LLM did not call extract_lab_panel tool (text path).')
@@ -150,7 +169,7 @@ export async function extractLabReport(pdf: Buffer): Promise<ExtractionDraft> {
   const base64 = pdf.toString('base64')
   const response = await client.messages.create({
     model: ANTHROPIC_MODEL,
-    max_tokens: 8192,
+    max_tokens: MAX_OUTPUT_TOKENS,
     system: SYSTEM_PROMPT,
     tools: [EXTRACT_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: 'tool', name: EXTRACT_TOOL.name },
@@ -175,6 +194,7 @@ export async function extractLabReport(pdf: Buffer): Promise<ExtractionDraft> {
       },
     ],
   })
+  assertNotTruncated(response, 'vision')
   const block = pickToolUseBlock(response.content)
   if (!block) {
     throw new Error('LLM did not call extract_lab_panel tool (vision path).')
