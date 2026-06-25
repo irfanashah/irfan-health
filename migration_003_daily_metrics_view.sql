@@ -27,6 +27,13 @@
 --   hrv            Whoop daily_summary, period_end attribution
 --   rhr            Whoop daily_summary, period_end attribution
 --   strain         Whoop daily_summary, period_end attribution
+--   spo2_whoop     Whoop daily_summary, wake-day attribution (cycle-end
+--                                 period_end → routed via whoop_wake).
+--                                 Corroborating SpO2; NOT a drift metric
+--                                 (Oxylink is authoritative — spec).
+--   skin_temp      Whoop daily_summary, wake-day attribution via whoop_wake.
+--                                 °C; drift-tracked (concerning='up' —
+--                                 sustained rise = possible illness signal).
 --   sleep.*        Whoop daily_summary, period_end attribution; canonical_unit
 --                                 is 'min' on the source row, view EXPOSES HOURS
 --                                 (matches the prototype's sleep.total shape).
@@ -172,17 +179,23 @@ whoop_wake AS (
     AND period_end IS NOT NULL
 ),
 whoop_daily AS (
+  -- spo2_whoop + skin_temp come from the recovery payload — same shape as
+  -- recovery_score/hrv/rhr/strain (period_end = cycle end, not wake). Route
+  -- through whoop_wake on period_start so they bucket to the cycle's wake
+  -- day, NOT the cycle-end calendar day (gotcha #74).
   SELECT
     w.wake_day AS date,
     MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'recovery_score')      AS recovery,
     MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'hrv_rmssd')           AS hrv,
     MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'heart_rate_resting')  AS rhr,
-    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'strain_score')        AS strain
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'strain_score')        AS strain,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'spo2_whoop')          AS spo2_whoop,
+    MAX(o.canonical_value) FILTER (WHERE o.metric_type = 'skin_temp')           AS skin_temp
   FROM health_observations o
   JOIN whoop_wake w ON w.period_start = o.period_start
   WHERE o.source_slug = 'whoop'
     AND o.data_shape  = 'daily_summary'
-    AND o.metric_type IN ('recovery_score','hrv_rmssd','heart_rate_resting','strain_score')
+    AND o.metric_type IN ('recovery_score','hrv_rmssd','heart_rate_resting','strain_score','spo2_whoop','skin_temp')
   GROUP BY w.wake_day
 ),
 
@@ -279,6 +292,7 @@ SELECT
   bp.sys, bp.dia, bp.pulse,
   w.weight,
   wh.recovery, wh.hrv, wh.rhr, wh.strain,
+  wh.spo2_whoop, wh.skin_temp,
   sl.sleep_total, sl.sleep_performance,
   sl.sleep_deep, sl.sleep_light, sl.sleep_rem, sl.sleep_awake,
   cf.fasting,

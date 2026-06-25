@@ -36,6 +36,8 @@ export interface DailyMetricRow {
   spo2_min: number | null            // %  (Oxylink overnight minimum)
   spo2_odi: number | null            // /h (Oxylink screening-grade ODI, 3% threshold — provisional)
   spo2_time_below_90: number | null  // %  (Oxylink % of valid recording time < 90%)
+  spo2_whoop: number | null          // %  (Whoop recovery SpO2 — corroborating, NOT drift)
+  skin_temp: number | null           // °C (Whoop skin temperature — drift-tracked)
 }
 
 // Postgres `numeric` round-trips as string through PostgREST — coerce
@@ -71,6 +73,8 @@ function mapDailyRow(raw: Record<string, unknown>): DailyMetricRow {
     spo2_min: n(raw.spo2_min as number | string | null),
     spo2_odi: n(raw.spo2_odi as number | string | null),
     spo2_time_below_90: n(raw.spo2_time_below_90 as number | string | null),
+    spo2_whoop: n(raw.spo2_whoop as number | string | null),
+    skin_temp: n(raw.skin_temp as number | string | null),
   }
 }
 
@@ -93,7 +97,7 @@ export async function fetchDailyMetrics(days: number): Promise<DailyMetricRow[]>
   const { data, error } = await supabase
     .from('daily_metrics')
     .select(
-      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min, spo2_odi, spo2_time_below_90'
+      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min, spo2_odi, spo2_time_below_90, spo2_whoop, skin_temp'
     )
     .gte('date', cutoff)
     .order('date', { ascending: true })
@@ -181,6 +185,10 @@ export interface LatestKpis {
     distribution: { ge95: number; b90_94: number; lt90: number }
     at: string
   } | null
+  /** Latest Whoop skin temperature reading (°C). */
+  skinTemp: { value: number; at: string } | null
+  /** Latest Whoop recovery SpO2 reading — corroborating, NOT drift. */
+  spo2Whoop: { value: number; at: string } | null
 }
 
 async function latestObs(
@@ -222,6 +230,8 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
     sleepTotalRow,
     sleepPerfRow,
     bpRow,
+    skinTempRow,
+    spo2WhoopRow,
   ] = await Promise.all([
     latestObs(supabase, 'weight'),
     latestObs(supabase, 'recovery_score'),
@@ -236,6 +246,12 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
       .order('measured_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Whoop skin_temp + spo2_whoop — recovery payload, no recorded_at;
+    // latestObs falls back to period_end. NOTE the period_end ordering
+    // surfaces the most recently CLOSED cycle; that's the most recent
+    // night's wake reading once the cycle settles overnight.
+    latestObs(supabase, 'skin_temp'),
+    latestObs(supabase, 'spo2_whoop'),
   ])
 
   const bp = bpRow.data
@@ -286,6 +302,8 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
     sleep,
     cgm,
     spo2,
+    skinTemp: skinTempRow,
+    spo2Whoop: spo2WhoopRow,
   }
 }
 

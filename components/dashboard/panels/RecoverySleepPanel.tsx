@@ -1,6 +1,6 @@
 'use client'
 
-import { Moon, Flame } from 'lucide-react'
+import { Moon, Flame, Thermometer } from 'lucide-react'
 import { Card } from '../ui/Card'
 import { PanelHeader } from '../ui/PanelHeader'
 import { Legend } from '../ui/Legend'
@@ -33,6 +33,27 @@ export function RecoverySleepPanel({ series, latest, rangeDays }: Props) {
       awake: d.sleep_awake ?? 0,
     },
   }))
+
+  // Skin-temp readout: compare today's value to the recent personal mean
+  // (last 14 data-days, excluding today itself) — cheap "vs your normal"
+  // hint without a separate fetch. The Baselines & drift tab carries the
+  // proper median+MAD verdict.
+  const skinTempLatest = latest.skinTemp?.value ?? null
+  let skinTempBaseline: number | null = null
+  if (skinTempLatest !== null) {
+    const todayIso = latest.skinTemp?.at?.slice(0, 10) ?? null
+    const recent = series
+      .filter((d) => d.skin_temp !== null && d.date !== todayIso)
+      .slice(-14)
+      .map((d) => d.skin_temp as number)
+    if (recent.length >= 5) {
+      skinTempBaseline = recent.reduce((a, b) => a + b, 0) / recent.length
+    }
+  }
+  const skinTempDelta =
+    skinTempLatest !== null && skinTempBaseline !== null
+      ? skinTempLatest - skinTempBaseline
+      : null
 
   return (
     <Card className="col-5">
@@ -80,6 +101,23 @@ export function RecoverySleepPanel({ series, latest, rangeDays }: Props) {
       </div>
       <StackedBars data={sleepData} keys={SLEEP_KEYS} height={170} />
       <Legend items={SLEEP_KEYS.map((k) => ({ color: k.color, label: k.label }))} />
+
+      {/* Skin temp — small Whoop-sourced readout. Drift is tracked on the
+          Baselines & drift tab; this is the at-a-glance "today vs your
+          recent normal" reading. */}
+      {skinTempLatest !== null && (
+        <div className="skin-temp-readout">
+          <Thermometer size={13} />
+          <span className="skin-temp-label">Skin temp</span>
+          <span className="skin-temp-val">{skinTempLatest.toFixed(1)}°C</span>
+          {skinTempDelta !== null && Math.abs(skinTempDelta) >= 0.1 && (
+            <span className="skin-temp-delta">
+              {skinTempDelta > 0 ? '+' : ''}
+              {skinTempDelta.toFixed(1)}°C vs your normal
+            </span>
+          )}
+        </div>
+      )}
     </Card>
   )
 }

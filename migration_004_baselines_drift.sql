@@ -189,8 +189,12 @@ CREATE POLICY "authenticated_full_access" ON med_changes
 CREATE OR REPLACE VIEW metric_drift AS
 
 WITH
--- 1. Unpivot daily_metrics into long form for the 12 metrics (8 v1 + 2 SpO2 + 2 desat).
+-- 1. Unpivot daily_metrics into long form for the 13 metrics
+--    (8 v1 + 2 SpO2 + 2 desat + 1 skin_temp).
 --    NULL values are excluded by design — only real readings flow through.
+--    NOTE: spo2_whoop is intentionally NOT here — it's a corroborating
+--    readout in the Overnight Oxygen panel, not a drift signal (Oxylink
+--    is the authoritative SpO2; tracking both would double-count).
 long_form AS (
   SELECT date, 'rhr'         AS metric, rhr::numeric         AS value FROM daily_metrics WHERE rhr         IS NOT NULL
   UNION ALL SELECT date, 'hrv',                hrv::numeric                AS value FROM daily_metrics WHERE hrv                IS NOT NULL
@@ -204,6 +208,7 @@ long_form AS (
   UNION ALL SELECT date, 'spo2_min',           spo2_min::numeric           AS value FROM daily_metrics WHERE spo2_min           IS NOT NULL
   UNION ALL SELECT date, 'spo2_odi',           spo2_odi::numeric           AS value FROM daily_metrics WHERE spo2_odi           IS NOT NULL
   UNION ALL SELECT date, 'spo2_time_below_90', spo2_time_below_90::numeric AS value FROM daily_metrics WHERE spo2_time_below_90 IS NOT NULL
+  UNION ALL SELECT date, 'skin_temp',          skin_temp::numeric          AS value FROM daily_metrics WHERE skin_temp          IS NOT NULL
 ),
 
 -- 2. Latest active med-change date per metric (window-start reset floor).

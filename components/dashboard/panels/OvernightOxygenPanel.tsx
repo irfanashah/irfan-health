@@ -102,6 +102,18 @@ export function OvernightOxygenPanel({ series, latest, night, rangeDays }: Props
         <div className="empty-note">No overnight oxygen reading yet</div>
       )}
 
+      {/* Whoop SpO2 — corroborating only. The Oxylink readout above is the
+          authoritative SpO2 (overnight curve + ODI + time-below); this is a
+          second-source sanity check, not the headline + NOT a drift metric. */}
+      {latest.spo2Whoop && (
+        <div className="spo2-corroborate">
+          <span className="spo2-corroborate-dot" style={{ background: 'var(--purple)' }} />
+          <span className="spo2-corroborate-label">Whoop · corroborating</span>
+          <span className="spo2-corroborate-val">{Math.round(latest.spo2Whoop.value)}%</span>
+          <span className="spo2-corroborate-source">via Whoop recovery</span>
+        </div>
+      )}
+
       {/* ─── Distribution donut ───────────────────────────────────────── */}
       {hasNight && dist && distTotal > 1 ? (
         <div className="spo2-dist">

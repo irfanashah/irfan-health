@@ -16,6 +16,7 @@ export type DriftMetricId =
   | 'weight'
   | 'spo2_avg' | 'spo2_min'
   | 'spo2_odi' | 'spo2_time_below_90'
+  | 'skin_temp'
 
 export type ConcerningDirection = 'up' | 'down'
 
@@ -107,11 +108,19 @@ export const DRIFT_CONFIG: Record<DriftMetricId, DriftMetricConfig> = {
   // from below (zero is the floor and that's the good direction).
   spo2_odi:           { id: 'spo2_odi',           label: 'Desaturations / hour',     short: 'ODI',          unit: '/h', concerning: 'up', acknowledgeGood: true, absFloor: 2.0, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
   spo2_time_below_90: { id: 'spo2_time_below_90', label: 'Time below 90% SpO2',      short: 'Time <90%',    unit: '%',  concerning: 'up', acknowledgeGood: true, absFloor: 1.5, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
+  // Whoop skin temperature — sustained rise = possible illness / inflammation
+  // / fever (the early-warning signal that matters for a post-MI patient).
+  // acknowledgeGood=false: a dip below normal isn't a "win" worth celebrating;
+  // the panel just renders 'stable' silence. No fixed clinical band (no
+  // st.skinTemp / no LOW_FLOORS) — skin temp is a personal-baseline
+  // deviation signal; the drift engine watches movement from his own normal.
+  // All thresholds provisional pending Dr. Jose.
+  skin_temp:          { id: 'skin_temp',          label: 'Skin temperature',         short: 'Skin temp',    unit: '°C', concerning: 'up', acknowledgeGood: false, absFloor: 0.4, zFloor: 1.0, minNShort: 5, minNPrior: 12, shortWindowDays: 7, rollingWindowDays: 28, M: 7 },
 }
 
 export const DRIFT_METRICS: readonly DriftMetricId[] = [
   'rhr', 'hrv', 'sys', 'dia', 'fasting', 'glucose_var', 'tir', 'weight',
-  'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90',
+  'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90', 'skin_temp',
 ]
 
 /**

@@ -41,7 +41,12 @@ const RECOVERY_METRICS = [
   'recovery_score',
   'hrv_rmssd',
   'heart_rate_resting',
-  'spo2_overnight_avg',
+  // Whoop SpO2 — renamed from 'spo2_overnight_avg' (collided with Oxylink's
+  // type); migration_007 re-stamps history in place. Stays here as
+  // corroborating only — NOT a drift metric (Oxylink is authoritative).
+  'spo2_whoop',
+  // Whoop skin temperature — recovery-payload field (4.0+).
+  'skin_temp',
 ] as const
 
 const SLEEP_METRICS = [
@@ -153,15 +158,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       continue
     }
 
-    const recMap: Record<string, { value: number; unit: string }> = {
+    // Whoop SpO2 + skin_temp are 4.0+ fields — typed nullable; null-guard
+    // before pushing (filter applied in the loop) so absent fields don't
+    // pollute trends with null rows (gotchas #25 + #34).
+    const recMap: Record<string, { value: number | null; unit: string }> = {
       recovery_score: { value: rec.score.recovery_score, unit: 'dimensionless' },
       hrv_rmssd: { value: rec.score.hrv_rmssd_milli, unit: 'ms' },
       heart_rate_resting: { value: rec.score.resting_heart_rate, unit: 'bpm' },
-      spo2_overnight_avg: { value: rec.score.spo2_percentage, unit: '%' },
+      spo2_whoop: { value: rec.score.spo2_percentage, unit: '%' },
+      skin_temp: { value: rec.score.skin_temp_celsius, unit: 'C' },
     }
 
     for (const metric_type of RECOVERY_METRICS) {
       const m = recMap[metric_type]
+      if (m.value === null || m.value === undefined) continue
       planned.push({
         source_record_id: `recovery_${rec.cycle_id}_${metric_type}`,
         data_shape: 'daily_summary',

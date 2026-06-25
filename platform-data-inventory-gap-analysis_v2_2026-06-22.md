@@ -32,8 +32,8 @@ Wearable: **WHOOP 5.0 MG**. The developer API exposes exactly **six data types**
 | `recovery_score` | ✅ Ingested | % |
 | `resting_heart_rate` | ✅ Ingested (`heart_rate_resting`) | bpm |
 | `hrv_rmssd_milli` | ✅ Ingested (`hrv_rmssd`) | ms |
-| `spo2_percentage` | ◻️ **Available, not pulled** (already in the payload we fetch) | % |
-| `skin_temp_celsius` | ◻️ **Available, not pulled** (already in the payload) | °C |
+| `spo2_percentage` | ⚠️ **CORRECTION (2026-06-25): actually IS persisted** — the adapter writes it, but mislabeled as `metric_type='spo2_overnight_avg'` (colliding with Oxylink) + unsurfaced. Being renamed to `spo2_whoop` + surfaced as corroboration (`whoop-spo2-skintemp-spec`). | % |
+| `skin_temp_celsius` | ◻️ **Available, not pulled** (in the payload; genuinely not written) — being added (`whoop-spo2-skintemp-spec`) | °C |
 | `user_calibrating` | ◻️ Available (data-quality flag) | bool |
 
 ### Sleep (`/v2/activity/sleep`)

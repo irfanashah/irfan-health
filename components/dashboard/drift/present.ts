@@ -37,6 +37,7 @@ const SOURCE_LABEL: Record<DriftMetricId, string> = {
   spo2_min: 'Oxylink',
   spo2_odi: 'Oxylink',
   spo2_time_below_90: 'Oxylink',
+  skin_temp: 'Whoop',
 }
 
 // ─── Public types ──────────────────────────────────────────────────────────

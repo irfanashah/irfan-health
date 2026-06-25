@@ -26,8 +26,12 @@ export interface WhoopRecoveryRecord {
     recovery_score: number
     resting_heart_rate: number
     hrv_rmssd_milli: number
-    spo2_percentage: number
-    skin_temp_celsius: number
+    // Whoop 4.0+ fields — payload typically populated for a 4.0/5.0 strap
+    // but defensively typed nullable; the adapter + refill both skip the
+    // metric when its source field is null/undefined rather than writing
+    // a null row.
+    spo2_percentage: number | null
+    skin_temp_celsius: number | null
   }
 }
 

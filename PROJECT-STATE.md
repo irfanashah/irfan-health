@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-25 (session: 7.1 dashboard fixes — Whoop wake-day attribution bug + Glucose fingerstick fallback + KPI sparkline overflow)_
+_Last updated: 2026-06-25 (session: Whoop SpO2 rename → `spo2_whoop` + skin_temp added — corrects a gap-analysis-v2 error)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-Three live-eyeballed issues fixed. **Part 1 was a real data-correctness bug** — `daily_metrics`'s `whoop_daily` CTE bucketed recovery/RHR/HRV/strain by `period_end` which is the CYCLE end, not the wake morning. Any cycle ending after GST midnight mis-dated to the next day, collided, and dropped the correct day to NULL — scattered gaps on RHR/HRV/Recovery charts AND corrupt drift baselines (the `metric_drift` view reads these). Fixed at the view layer (`whoop_wake` CTE derives wake from each cycle's main sleep; recovery family JOINs on `period_start`). No data migration, no re-ingestion. **Part 2:** Glucose panel now has a fingerstick fallback — latest fingerstick as headline "now" + recent-readings list + "Needs CGM data" TIR placeholder when no recent CGM. **Part 3:** KPI sparkline now `overflow: hidden` + ≤2-point short-circuit → BP sparkline no longer bleeds out of its tile. `npm run build` clean — 27 routes.
+Two Whoop fields cleaned up + surfaced. **(1) Mislabel correction:** the adapter was already writing Whoop's recovery SpO2 — but under `metric_type='spo2_overnight_avg'`, colliding semantically with Oxylink. Renamed to `spo2_whoop`; `migration_007` re-stamps history in place (no deletes). Now surfaced as a corroborating readout in the Overnight Oxygen panel — Oxylink stays authoritative. **(2) Skin temperature added:** `rec.score.skin_temp_celsius` was in the payload but never written. Now a first-class drift signal (concerning='up' — sustained rise = possible illness / inflammation / fever) and a small readout in Recovery & Sleep. Both wake-day attributed via `whoop_wake` (mandatory — gotcha #74 the recovery payload is cycle-end-stamped). `npm run build` clean — 27 routes.
 
 ## Slice ledger
 - ✅ Slice 0 — Scaffold · ✅ 1 Whoop · ✅ 1.5/1.6 backfill+refill · ✅ 2 Withings BP
@@ -18,39 +18,35 @@ Three live-eyeballed issues fixed. **Part 1 was a real data-correctness bug** �
 - ✅ Slice 7.3R — Baselines & drift redesign + tab move (Claude Design port)
 - ✅ Oxylink desaturation — ODI + time-below-90 + overnight curve + Overnight Oxygen panel + true event markers + Today min-SpO2 tile
 - ✅ Contour fingerstick parser + CGM-trace fingerstick markers
-- ✅ **Dashboard 7.1 fixes — Whoop wake-day attribution + Glucose fingerstick fallback + KPI sparkline overflow**
+- ✅ Dashboard 7.1 fixes — Whoop wake-day attribution + Glucose fingerstick fallback + KPI sparkline overflow
+- ✅ **Whoop SpO2 rename → `spo2_whoop` + skin_temp add** (corrects gap-analysis-v2)
 - → **Withings weight extension** (small follow-on) — NEXT
-- ⬜ Anchor population (post-rehab); confirm Dr. Jose low floors + ODI severity bands; Slice 6 — Labs PDF (rides file-drop pipeline); med-adherence + meal-logging paths; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived fasting — deferred follow-on)
+- ⬜ Anchor population (post-rehab); confirm Dr. Jose floors + ODI severity + skin_temp threshold; Slice 6 — Labs PDF; med-adherence + meal-logging; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived)
 
 ## Data state
-- **Whoop:** complete, Diagnose gap = 0; 6-hourly cron clean. (View now attributes recovery/RHR/HRV/strain by wake day correctly — no re-ingestion needed.)
+- **Whoop:** complete, Diagnose gap = 0; 6-hourly cron clean. Adapter now writes `spo2_whoop` (corroborating) + `skin_temp` (drift-tracked); both null-guarded. Migration_007 re-stamps existing SpO2 history.
 - **Withings:** `bp_readings` complete, Diagnose gap = 0; 12-hourly cron clean. (BP only — weight extension queued.)
 - **Manual:** live on Vercel; smoke test passed.
-- **Nightscout (CGM):** `glucose_cgm` = 2,995 rows, last write May 2026; live xDrip+/G7 capture pending new sensor. The Glucose panel's fingerstick fallback now handles this stale-CGM state gracefully.
-- **Oxylink (overnight SpO2 + desaturation):** 7 nights ingested via the new shape; file-drop pipeline live (10:00 + 21:00 GST).
+- **Nightscout (CGM):** `glucose_cgm` = 2,995 rows, last write May 2026; live xDrip+/G7 capture pending new sensor. Glucose panel has fingerstick fallback for this stale-CGM state.
+- **Oxylink (overnight SpO2 + desaturation):** 7 nights ingested via the new shape; file-drop pipeline live.
 - **Contour fingerstick:** 57 readings ingested (05/04 → 06/24 2026).
-- **`daily_metrics` view:** wake-day attribution corrected for the Whoop recovery family. 12 metric exposure unchanged.
-- **`metric_drift` view:** unchanged in this slice. Drift baselines for RHR + HRV will recompute on the corrected data the next time the dashboard pulls.
+- **`daily_metrics` view:** 14 metric exposure (8 v1 + 4 SpO2/desat + skin_temp + spo2_whoop). `whoop_daily` now routes spo2_whoop + skin_temp through `whoop_wake` (mandatory wake-day attribution).
+- **`metric_drift` view:** 13 signals (added `skin_temp`; `spo2_whoop` deliberately NOT a drift signal — corroborating only).
 
 ## Next action
-1. **Re-run `migration_003_daily_metrics_view.sql`** in Supabase (CREATE OR REPLACE only — no data change).
-2. **Verify the fix:**
-   ```sql
-   SELECT date, recovery, rhr, hrv, strain
-   FROM daily_metrics
-   WHERE date IN ('2026-06-05','2026-06-10');
-   ```
-   Expect **Jun 5 recovery = 71**, **Jun 10 recovery = 63** (matching the Whoop app).
-3. **Eyeball the deploy:**
-   - Recovery and RHR/HRV charts should fill in (no more scattered empty days where Whoop has data).
-   - Baselines & drift tab's RHR + HRV signals recompute on corrected data.
-   - Glucose panel: with CGM stale, the headline now shows your latest Contour fingerstick + a recent-readings list + a "Needs CGM data" placeholder instead of 0/0/0.
-   - BP KPI sparkline stays inside its tile (no diagonal bleed).
-4. Once green, the next slot is the **Withings weight extension**.
+**Run the migrations IN ORDER**:
+1. **`migration_007_whoop_spo2_rename.sql`** — re-stamps existing Whoop SpO2 rows in place from `spo2_overnight_avg` → `spo2_whoop` (idempotent; never deletes).
+2. **`migration_003`** (CREATE OR REPLACE) — adds `spo2_whoop` + `skin_temp` columns to the wake-day-attributed `whoop_daily` CTE.
+3. **`migration_004`** (CREATE OR REPLACE) — adds `skin_temp` UNION ALL line to `long_form` (skin_temp only; spo2_whoop is corroborating, not drift).
+4. Then run the **Whoop refill** once (browser dev-console `fetch('/api/refill/whoop', {method:'POST'})` while logged in) to backfill skin_temp history + re-confirm spo2_whoop. The fix is forward-applying — the refill is what fills in skin_temp for past cycles.
+
+**Verify**: `SELECT date, recovery, spo2_whoop, skin_temp FROM daily_metrics WHERE skin_temp IS NOT NULL ORDER BY date DESC LIMIT 10;` — should show skin_temp values across the last ~10 days (degrees Celsius) and spo2_whoop alongside.
+
+**Eyeball the deploy**: Recovery & Sleep panel shows a small "Skin temp 33.6°C · +0.3°C vs your normal" line below sleep stages. Overnight Oxygen panel shows a small "Whoop · corroborating 96%" pill below the Oxylink readout. Baselines & drift tab adds `skin_temp` as a drift row (`establishing` until ~5–12 nights of post-refill data accrue).
 
 ## Open items (non-blocking)
 - **Anchor population** — `/baselines` set-anchor form is built; populate post-rehab.
-- **Confirm Dr. Jose floors + ODI severity bands** — `LOW_FLOORS` + `st.odi(v)` band all provisional.
+- **Confirm Dr. Jose floors + ODI severity + skin_temp threshold** — `LOW_FLOORS` + `st.odi(v)` + skin_temp `absFloor 0.4 / zFloor 1.0` all provisional.
 - **Withings weight extension** — small follow-on.
 - **Fasting cross-check (Contour vs CGM-derived)** — deferred follow-on.
 - **Range-wide meter-vs-sensor view** — Glucose panel's CGM trace is fixed 24h.

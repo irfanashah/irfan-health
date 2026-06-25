@@ -152,7 +152,7 @@ export const whoopAdapter: Adapter = {
 
         const recoveryMetrics: Array<{
           metric_type: string
-          value: number
+          value: number | null
           unit: string
           canonical_unit: string
         }> = [
@@ -174,17 +174,40 @@ export const whoopAdapter: Adapter = {
             unit: 'bpm',
             canonical_unit: 'bpm',
           },
+          // Whoop SpO2 — renamed from 'spo2_overnight_avg' to 'spo2_whoop'
+          // (in-place re-stamp of history happens in migration_007). Oxylink
+          // is the authoritative SpO2 (overnight curve + ODI + time-below);
+          // Whoop's single recovery SpO2 is corroborating only and is NOT a
+          // drift metric.
           {
-            metric_type: 'spo2_overnight_avg',
+            metric_type: 'spo2_whoop',
             value: rec.score.spo2_percentage,
             unit: '%',
             canonical_unit: '%',
           },
+          // Whoop skin temperature — recovery-payload field, 4.0+. Surfaced
+          // in Recovery & Sleep + tracked as a drift signal (concerning='up':
+          // sustained rise = possible illness/inflammation). No unit
+          // conversion — canonical_value === value (°C).
+          {
+            metric_type: 'skin_temp',
+            value: rec.score.skin_temp_celsius,
+            unit: 'C',
+            canonical_unit: 'C',
+          },
         ]
 
-        recordsFound += recoveryMetrics.length
+        // Null-guard: 4.0+ fields can be absent on older devices / mid-
+        // cycle gaps; skip those metrics rather than write null rows that
+        // would pollute trends + drift (gotcha #34). The type predicate
+        // narrows `value` from `number | null` to `number` so downstream
+        // upsertObservation (which requires non-null numeric_value) typechecks.
+        const validRecoveryMetrics = recoveryMetrics.filter(
+          (m): m is typeof m & { value: number } => m.value !== null && m.value !== undefined
+        )
+        recordsFound += validRecoveryMetrics.length
 
-        for (const m of recoveryMetrics) {
+        for (const m of validRecoveryMetrics) {
           const result = await upsertObservation(supabase, {
             source_slug: SOURCE_SLUG,
             source_record_id: `recovery_${rec.cycle_id}_${m.metric_type}`,
