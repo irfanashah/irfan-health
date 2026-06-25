@@ -49,7 +49,7 @@ export function DashboardClient({ series, cgm24h, latest, recent, baselines, spo
       <Header range={range} onRangeChange={setRange} tab={tab} onTabChange={setTab} />
       {tab === 'dashboard' && (
         <main className="grid">
-          <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} />
+          <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} fingersticks={fingersticks} />
           <CardiacPanel series={sliced} latest={latest} />
           <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} fingersticks={fingersticks} />
           <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />

@@ -5,14 +5,28 @@ import { Card } from '../ui/Card'
 import { PanelHeader } from '../ui/PanelHeader'
 import { KpiCard } from '../ui/KpiCard'
 import { st, MMOL_TO_MGDL } from '../thresholds'
-import type { DailyMetricRow } from '@/app/lib/dashboard/daily-metrics'
-import type { LatestKpis } from '@/app/lib/dashboard/daily-metrics'
+import type { DailyMetricRow, LatestKpis, FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
 
 interface Props {
   series: DailyMetricRow[]      // already range-sliced
   latest: LatestKpis
   glucoseUnit: 'mmol/L' | 'mg/dL'
   rangeDays: number
+  /** Recent fingersticks — used as the glucose KPI fallback when CGM is stale. */
+  fingersticks?: FingerstickPoint[]
+}
+
+const FINGERSTICK_SOURCE_LABEL: Record<string, string> = {
+  contour: 'Contour',
+  manual: 'Manual log',
+}
+
+function fmtAgo(time: Date): string {
+  const dt = Date.now() - time.getTime()
+  const h = 60 * 60 * 1000
+  if (dt < h) return `${Math.max(1, Math.round(dt / 60000))}m ago`
+  if (dt < 24 * h) return `${Math.round(dt / h)}h ago`
+  return `${Math.round(dt / (24 * h))}d ago`
 }
 
 function take<T>(rows: T[], k: number): T[] {
@@ -24,7 +38,7 @@ function nullable(v: number | null | undefined): React.ReactNode {
   return v
 }
 
-export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props) {
+export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays, fingersticks = [] }: Props) {
   const recoverySpark = take(series, 16).map((d) => d.recovery).filter((v): v is number => v !== null)
   const sysSpark = take(series, 16).map((d) => d.sys).filter((v): v is number => v !== null)
   const sleepSpark = take(series, 16).map((d) => d.sleep_total).filter((v): v is number => v !== null)
@@ -39,7 +53,15 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props
 
   const toG = (mmol: number) => (glucoseUnit === 'mmol/L' ? +mmol.toFixed(1) : Math.round(mmol * MMOL_TO_MGDL))
 
-  const glucoseValue = latest.cgm
+  // ─── Glucose KPI: CGM if live, fingerstick fallback otherwise ─────────
+  // Mirrors the GlucosePanel's branching so the top-of-dashboard tile stays
+  // useful when CGM is stale and only fingersticks are populated.
+  const fingersticksNewestFirst = [...fingersticks].reverse()
+  const latestFingerstick = fingersticksNewestFirst[0] ?? null
+  const cgmLive = latest.cgm !== null
+  const glucoseValueMmol = cgmLive ? latest.cgm!.value : latestFingerstick?.mmol ?? null
+  const glucoseStatus = st.glucose(glucoseValueMmol)
+  const glucoseValue = cgmLive && latest.cgm
     ? (
         <span className="kpi-glucose">
           {toG(latest.cgm.value)}
@@ -48,9 +70,20 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props
           </span>
         </span>
       )
-    : '—'
-
-  const glucoseSpark: number[] = [] // 24h CGM spark goes in the Glucose panel; KPI is just latest + arrow
+    : latestFingerstick
+      ? toG(latestFingerstick.mmol)
+      : '—'
+  const glucoseSub = cgmLive
+    ? 'CGM · live'
+    : latestFingerstick
+      ? `${fmtAgo(latestFingerstick.time)} · ${FINGERSTICK_SOURCE_LABEL[latestFingerstick.source] ?? latestFingerstick.source}`
+      : 'No recent CGM'
+  // Sparkline: in fallback, draw the recent fingerstick trail so the tile
+  // still says something at a glance. CGM-live path stays empty (the big
+  // 24h chart is the place for that trend).
+  const glucoseSpark: number[] = cgmLive
+    ? []
+    : fingersticks.map((fs) => toG(fs.mmol))
 
   return (
     <Card className="col-12 glance-card">
@@ -83,11 +116,11 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays }: Props
           icon={<Droplet size={17} />}
           label="Glucose"
           value={glucoseValue}
-          unit={latest.cgm ? glucoseUnit : undefined}
-          status={st.glucose(latest.cgm?.value ?? null)}
+          unit={glucoseValueMmol !== null ? glucoseUnit : undefined}
+          status={glucoseStatus}
           spark={glucoseSpark}
           sparkColor="var(--purple)"
-          sub={latest.cgm ? 'CGM · live' : 'No recent CGM'}
+          sub={glucoseSub}
         />
         <KpiCard
           icon={<Moon size={17} />}

@@ -201,18 +201,33 @@ export function TrendChart<T>({
                     />
                   ) : null
                 )}
-              {segs.map((pts, gi) => (
-                <path
-                  key={`l${si}-${gi}`}
-                  d={smoothPath(pts)}
-                  fill="none"
-                  stroke={s.color}
-                  strokeWidth={s.width || 2.2}
-                  strokeDasharray={s.dash || undefined}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ))}
+              {segs.map((pts, gi) =>
+                // An isolated point — a single non-null surrounded by gaps —
+                // would render as `M x y` with no draw command (smoothPath
+                // emits Move-only for length 1). That made sparse BP days
+                // invisible on the Cardiac chart. Render a dot instead so
+                // every real reading shows up.
+                pts.length === 1 ? (
+                  <circle
+                    key={`pt${si}-${gi}`}
+                    cx={pts[0].x}
+                    cy={pts[0].y}
+                    r={(s.width || 2.2) + 0.6}
+                    fill={s.color}
+                  />
+                ) : (
+                  <path
+                    key={`l${si}-${gi}`}
+                    d={smoothPath(pts)}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth={s.width || 2.2}
+                    strokeDasharray={s.dash || undefined}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )
+              )}
             </g>
           )
         })}
