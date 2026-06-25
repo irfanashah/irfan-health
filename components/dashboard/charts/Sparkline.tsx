@@ -40,6 +40,7 @@ export function Sparkline({
   if (!data || data.length === 0) return null
 
   const n = data.length
+  const clipId = `${gid}-clip`
 
   // ─── Sparse-data branch: ≤2 points → short flat centered segment ────
   // Honest about "not enough to draw a trend" without drawing nothing.
@@ -53,13 +54,21 @@ export function Sparkline({
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
+        overflow="hidden"
         style={{ display: 'block', overflow: 'hidden' }}
       >
-        <line
-          x1={x0} y1={cy} x2={x1} y2={cy}
-          stroke={color} strokeWidth={2} strokeLinecap="round" opacity={0.45}
-        />
-        <circle cx={x1} cy={cy} r={2.6} fill={color} />
+        <defs>
+          <clipPath id={clipId}>
+            <rect x="0" y="0" width={width} height={height} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>
+          <line
+            x1={x0} y1={cy} x2={x1} y2={cy}
+            stroke={color} strokeWidth={2} strokeLinecap="round" opacity={0.45}
+          />
+          <circle cx={x1} cy={cy} r={2.6} fill={color} />
+        </g>
       </svg>
     )
   }
@@ -70,7 +79,9 @@ export function Sparkline({
   const pad = (max - min) * 0.15 || 1
   const lo = min - pad
   const hi = max + pad
-  // Plot inside [PAD_Y, height - PAD_Y] so bezier overshoot can't escape.
+  // Plot inside [PAD_Y, height - PAD_Y] so bezier overshoot has a buffer;
+  // a clipPath below provides the hard clip so anything still escaping
+  // gets clipped at the viewBox edges.
   const innerH = height - 2 * PAD_Y
   const pts = data.map((v, i) => ({
     x: (i / Math.max(1, n - 1)) * width,
@@ -83,6 +94,7 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      overflow="hidden"
       style={{ display: 'block', overflow: 'hidden' }}
     >
       <defs>
@@ -90,23 +102,30 @@ export function Sparkline({
           <stop offset="0%" stopColor={color} stopOpacity="0.28" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
+        <clipPath id={clipId}>
+          <rect x="0" y="0" width={width} height={height} />
+        </clipPath>
       </defs>
-      {fill && (
+      {/* Hard SVG-level clip — guarantees bezier overshoot stays inside
+          the viewport regardless of browser CSS-overflow quirks. */}
+      <g clipPath={`url(#${clipId})`}>
+        {fill && (
+          <path
+            d={`${d} L${width} ${height} L0 ${height} Z`}
+            fill={`url(#${gid})`}
+            stroke="none"
+          />
+        )}
         <path
-          d={`${d} L${width} ${height} L0 ${height} Z`}
-          fill={`url(#${gid})`}
-          stroke="none"
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
-      )}
-      <path
-        d={d}
-        fill="none"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx={pts[n - 1].x} cy={pts[n - 1].y} r={2.6} fill={color} />
+        <circle cx={pts[n - 1].x} cy={pts[n - 1].y} r={2.6} fill={color} />
+      </g>
     </svg>
   )
 }
