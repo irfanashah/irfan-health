@@ -49,3 +49,10 @@ Dexcom/
 
 # local Oxylink exports used for parser testing (PHI — never commit).
 Oxylink_*.csv
+
+# Contour fingerstick CSV exports (PHI — never commit).
+Patient*_BG_data_*.csv
+
+# local lab report PDFs (PHI — never commit). The /labs flow uploads
+# them to Supabase Storage at runtime; the repo never holds them.
+lab-reports/
