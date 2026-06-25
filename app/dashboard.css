@@ -137,6 +137,30 @@
 /* ---------- Cardiac ---------- */
 .cardiac-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px; }
 .cardiac-side { border-left: 1px solid var(--card-border); padding-left: 22px; }
+
+/* BP category readout — combined ACC/AHA classification of the latest
+   reading. Colour comes from bpCategory(); the border-left accent is the
+   sole coloured element so the rest stays calm. */
+.bp-category {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--surface-2); border: 1px solid var(--card-border);
+  border-radius: 10px; border-left-width: 3px;
+}
+.bp-category-dot {
+  width: 8px; height: 8px; border-radius: 50%; align-self: center; flex-shrink: 0;
+}
+.bp-category-label { font-size: 13.5px; font-weight: 700; letter-spacing: -0.005em; }
+.bp-category-val {
+  font-size: 15.5px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.bp-category-unit {
+  font-size: 11px; font-weight: 600; color: var(--text-muted); margin-left: 4px;
+}
+.bp-category-when {
+  font-size: 11px; color: var(--text-dim); font-style: italic; margin-left: auto;
+}
 .chart-caption { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; flex-wrap: wrap; }
 .chart-caption.sm { font-size: 12px; }

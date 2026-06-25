@@ -12,6 +12,15 @@ export interface TrendBand {
   opacity?: number
 }
 
+/** Subtle horizontal divider at a y-value, with optional edge labels above/below. */
+export interface TrendDivider {
+  value: number
+  /** Label shown at the right edge ABOVE the divider (e.g. "Systolic"). */
+  labelAbove?: string
+  /** Label shown at the right edge BELOW the divider (e.g. "Diastolic"). */
+  labelBelow?: string
+}
+
 export interface TrendSeries<T> {
   accessor: (d: T) => number | null
   color: string
@@ -26,6 +35,13 @@ interface Props<T> {
   xAccessor: (d: T) => Date
   series: TrendSeries<T>[]
   bands?: TrendBand[]
+  /**
+   * Optional horizontal divider — splits the chart into upper/lower
+   * y-territories. Used by the Cardiac BP chart to separate the diastolic
+   * zone (lower) from the systolic zone (upper) so each metric's bands
+   * are unambiguously in its own region.
+   */
+  divider?: TrendDivider
   height?: number
   yDomain?: [number, number]
   yTicks?: number
@@ -46,6 +62,7 @@ export function TrendChart<T>({
   xAccessor,
   series,
   bands = [],
+  divider,
   height = 260,
   yDomain,
   yTicks = 4,
@@ -149,6 +166,48 @@ export function TrendChart<T>({
             opacity={b.opacity ?? 0.08}
           />
         ))}
+        {/* optional divider — splits chart into upper/lower territories
+            (Cardiac BP chart: diastolic below, systolic above). */}
+        {divider && (
+          <g>
+            <line
+              x1={m.left}
+              y1={yOf(divider.value)}
+              x2={m.left + iw}
+              y2={yOf(divider.value)}
+              stroke="var(--text-dim)"
+              strokeWidth={1}
+              strokeDasharray="2 4"
+              opacity={0.45}
+            />
+            {divider.labelAbove && (
+              <text
+                x={m.left + iw - 6}
+                y={yOf(divider.value) - 4}
+                textAnchor="end"
+                fontSize="9.5"
+                fill="var(--text-dim)"
+                opacity={0.7}
+                style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}
+              >
+                {divider.labelAbove}
+              </text>
+            )}
+            {divider.labelBelow && (
+              <text
+                x={m.left + iw - 6}
+                y={yOf(divider.value) + 11}
+                textAnchor="end"
+                fontSize="9.5"
+                fill="var(--text-dim)"
+                opacity={0.7}
+                style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}
+              >
+                {divider.labelBelow}
+              </text>
+            )}
+          </g>
+        )}
         {/* gridlines + y labels */}
         {ticks.map((t, i) => (
           <g key={'g' + i}>

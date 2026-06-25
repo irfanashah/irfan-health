@@ -18,8 +18,10 @@ export const st = {
     return v >= 58 ? 'good' : v >= 45 ? 'watch' : 'concern'
   },
   bp: (s: number | null, d: number | null): Status => {
+    // Single source of truth: delegate to bpCategory() so the KPI dot
+    // and the Cardiac panel's category readout never drift apart.
     if (s === null || d === null) return 'neutral'
-    return s < 130 && d < 85 ? 'good' : s < 140 && d < 90 ? 'watch' : 'concern'
+    return bpCategory(s, d).status
   },
   glucose: (v: number | null): Status => {
     if (v === null) return 'neutral'
@@ -59,6 +61,131 @@ export const st = {
     if (v === null) return 'neutral'
     return v < 5 ? 'good' : v < 15 ? 'watch' : 'concern'
   },
+}
+
+// ─── Blood pressure — ACC/AHA categories (standard, not provisional) ──────
+//
+// Source: ACC/AHA 2017 Guideline for High Blood Pressure in Adults.
+// These are population-standard categories — labelled as such on the
+// dashboard. The LOW-side floors below are provisional (Dr. Jose).
+//
+// Used by:
+//   - `bpCategory(sys, dia)` → the single source of truth for BP status.
+//   - The Cardiac panel's BP trend chart, which renders these as faint
+//     territory bands (diastolic in the lower y-region, systolic in the
+//     upper) on a shared y-axis so each line sits in its own clinically-
+//     correct zones.
+
+export interface BpBand {
+  from: number
+  to: number
+  color: string
+  opacity?: number
+  /** Short label for the territory legend; not required for render. */
+  label?: string
+}
+
+/** Systolic mmHg bands (ACC/AHA). */
+export const BP_SYS_BANDS: readonly BpBand[] = [
+  // Low (provisional via LOW_FLOORS) → represented in the chart by leaving
+  // <90 unshaded; the bpCategory + readout call it out explicitly.
+  { from: 90,  to: 119, color: 'var(--teal)',  opacity: 0.06, label: 'Normal' },
+  { from: 120, to: 129, color: 'var(--amber)', opacity: 0.05, label: 'Elevated' },
+  { from: 130, to: 139, color: 'var(--amber)', opacity: 0.10, label: 'Stage 1' },
+  { from: 140, to: 179, color: 'var(--red)',   opacity: 0.07, label: 'Stage 2' },
+  { from: 180, to: 220, color: 'var(--red)',   opacity: 0.14, label: 'Crisis' },
+]
+
+/** Diastolic mmHg bands (ACC/AHA — diastolic has NO "Elevated" band). */
+export const BP_DIA_BANDS: readonly BpBand[] = [
+  { from: 60,  to: 79,  color: 'var(--teal)',  opacity: 0.06, label: 'Normal' },
+  { from: 80,  to: 89,  color: 'var(--amber)', opacity: 0.10, label: 'Stage 1' },
+  { from: 90,  to: 119, color: 'var(--red)',   opacity: 0.07, label: 'Stage 2' },
+  { from: 120, to: 140, color: 'var(--red)',   opacity: 0.14, label: 'Crisis' },
+]
+
+export type BpCategory = 'normal' | 'elevated' | 'stage1' | 'stage2' | 'crisis' | 'low'
+
+export interface BpCategoryResult {
+  category: BpCategory
+  label: string
+  /** Calm dashboard palette colour (var(--*)) for badges + status dots. */
+  color: string
+  /** Matching Status enum for st.bp delegation. */
+  status: Status
+}
+
+const BP_CATEGORY_LABELS: Record<BpCategory, string> = {
+  normal:   'Normal',
+  elevated: 'Elevated',
+  stage1:   'Stage 1 hypertension',
+  stage2:   'Stage 2 hypertension',
+  crisis:   'Hypertensive crisis',
+  low:      'Low (hypotension)',
+}
+
+const BP_CATEGORY_COLOR: Record<BpCategory, string> = {
+  normal:   'var(--teal)',
+  elevated: 'var(--amber)',
+  stage1:   'var(--amber)',
+  stage2:   'var(--red)',
+  crisis:   'var(--red)',
+  low:      'var(--amber)',
+}
+
+const BP_CATEGORY_STATUS: Record<BpCategory, Status> = {
+  normal:   'good',
+  elevated: 'watch',
+  stage1:   'watch',
+  stage2:   'concern',
+  crisis:   'concern',
+  low:      'watch',
+}
+
+/**
+ * Classify a sys/dia pair into the ACC/AHA category + the added Low state.
+ *
+ * "Higher-severity of the two numbers wins" (the OR-logic):
+ *   - Low      if sys < LOW_FLOORS.sys.floor OR dia < LOW_FLOORS.dia.floor
+ *              (provisional; the only category that uses LOW_FLOORS)
+ *   - Crisis   if sys > 180 OR dia > 120
+ *   - Stage 2  if sys ≥ 140 OR dia ≥ 90
+ *   - Stage 1  if sys 130–139 OR dia 80–89
+ *   - Elevated if sys 120–129 AND dia < 80 (Elevated needs BOTH per ACC/AHA —
+ *              a sys 125 with dia 85 is Stage 1, not Elevated)
+ *   - Normal   otherwise
+ *
+ * Low takes precedence (per spec): a reading can't be both Low and
+ * hypertensive at the same systolic/diastolic.
+ *
+ * SOURCE: ACC/AHA 2017 high-side categories (standard); low-side floors
+ * from LOW_FLOORS (provisional, pending Dr. Jose).
+ */
+export function bpCategory(sys: number, dia: number): BpCategoryResult {
+  const sysFloor = LOW_FLOORS.sys?.floor ?? 90
+  const diaFloor = LOW_FLOORS.dia?.floor ?? 60
+
+  let category: BpCategory
+  if (sys < sysFloor || dia < diaFloor) {
+    category = 'low'
+  } else if (sys > 180 || dia > 120) {
+    category = 'crisis'
+  } else if (sys >= 140 || dia >= 90) {
+    category = 'stage2'
+  } else if ((sys >= 130 && sys <= 139) || (dia >= 80 && dia <= 89)) {
+    category = 'stage1'
+  } else if (sys >= 120 && sys <= 129 && dia < 80) {
+    category = 'elevated'
+  } else {
+    category = 'normal'
+  }
+
+  return {
+    category,
+    label: BP_CATEGORY_LABELS[category],
+    color: BP_CATEGORY_COLOR[category],
+    status: BP_CATEGORY_STATUS[category],
+  }
 }
 
 export const MMOL_TO_MGDL = 18.0182
