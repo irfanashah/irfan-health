@@ -292,14 +292,18 @@ SELECT
   bp.sys, bp.dia, bp.pulse,
   w.weight,
   wh.recovery, wh.hrv, wh.rhr, wh.strain,
-  wh.spo2_whoop, wh.skin_temp,
   sl.sleep_total, sl.sleep_performance,
   sl.sleep_deep, sl.sleep_light, sl.sleep_rem, sl.sleep_awake,
   cf.fasting,
   cs.glucose_var,
   cs.tir,
   cs.cgm_count,
-  sp.spo2_avg, sp.spo2_min, sp.spo2_odi, sp.spo2_time_below_90
+  sp.spo2_avg, sp.spo2_min, sp.spo2_odi, sp.spo2_time_below_90,
+  -- NEW columns appended at the END (Postgres CREATE OR REPLACE VIEW
+  -- can only add columns at the end; inserting in the middle errors
+  -- "cannot change name of view column"). Order doesn't affect SELECT-
+  -- by-name from the data module.
+  wh.spo2_whoop, wh.skin_temp
 FROM date_series ds
 LEFT JOIN bp_daily     bp ON bp.date = ds.date
 LEFT JOIN weight_daily w  ON w.date  = ds.date
