@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { LabsClient } from './LabsClient'
-import { fetchAllPanels, fetchAllMarkerTrends } from './actions'
 import './labs.css'
 
 // Server actions invoked from this route segment inherit this ceiling.
@@ -12,15 +11,18 @@ import './labs.css'
 // routes (refill/diagnose) and the Pro plan's function maxDuration cap.
 export const maxDuration = 800
 
+/**
+ * /labs is the IMPORT TOOL — upload → review → commit. Data viz (panels
+ * list + key-marker trends) lives in the dashboard's Labs tab so it
+ * renders in the dashboard palette alongside the other health signals.
+ * This page is intentionally thin: the upload form + the review draft
+ * after extract. The CTA at the top points back at the dashboard tab
+ * where the imported data shows up.
+ */
 export default async function LabsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
-
-  const [panels, trends] = await Promise.all([
-    fetchAllPanels(),
-    fetchAllMarkerTrends(),
-  ])
 
   return (
     <div className="min-h-screen bg-background">
@@ -32,13 +34,13 @@ export default async function LabsPage() {
           >
             ← Dashboard
           </Link>
-          <h1 className="text-lg font-semibold text-foreground">Labs</h1>
+          <h1 className="text-lg font-semibold text-foreground">Labs · import</h1>
         </div>
         <ThemeToggle />
       </header>
 
       <main className="labs-page">
-        <LabsClient initialPanels={panels} initialTrends={trends} />
+        <LabsClient />
       </main>
     </div>
   )

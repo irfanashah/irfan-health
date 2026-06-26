@@ -3,10 +3,10 @@
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
-import { HeartPulse, Moon, Sun, Activity, Sparkles, Compass } from 'lucide-react'
+import { HeartPulse, Moon, Sun, Activity, Sparkles, Compass, TestTube } from 'lucide-react'
 import { RANGES, STEMI_DATE, type RangeId } from './thresholds'
 
-export type TabId = 'dashboard' | 'correlations' | 'baselines'
+export type TabId = 'dashboard' | 'correlations' | 'baselines' | 'labs'
 
 interface Props {
   range: RangeId
@@ -94,6 +94,12 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           onClick={() => onTabChange('baselines')}
         >
           <Compass size={15} /> Baselines &amp; drift
+        </button>
+        <button
+          className={`tab ${tab === 'labs' ? 'active' : ''}`}
+          onClick={() => onTabChange('labs')}
+        >
+          <TestTube size={15} /> Labs
         </button>
       </nav>
     </header>

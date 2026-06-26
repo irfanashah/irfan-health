@@ -2,30 +2,22 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, CheckCircle2, FileText, Upload } from 'lucide-react'
+import Link from 'next/link'
+import { AlertCircle, ArrowRight, CheckCircle2, FileText, Upload } from 'lucide-react'
 import {
   createLabUploadUrl,
   extractFromStorage,
   commitPanel,
-  type LabPanelRow,
-  type MarkerTrend,
   type CommitPayload,
 } from './actions'
 import type { ExtractionDraft, DraftValue } from './_lib/types'
 import { ALL_MARKER_SLUGS, getMarker } from './_lib/markers'
 import { bestSuggestedSlug, similarExistingSlugs } from './_lib/slug-suggest'
 import { computeFlag } from './_lib/ranges'
-import { PanelsList } from './PanelsList'
-import { MarkerTrends } from './MarkerTrends'
 import { createClient as createBrowserSupabase } from '@/lib/supabase/client'
 
 /** Hard client-side cap. Mirrors the bucket's 25 MB limit. */
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-
-interface Props {
-  initialPanels: LabPanelRow[]
-  initialTrends: MarkerTrend[]
-}
 
 interface ReviewRow extends DraftValue {
   /** User-confirmed canonical slug. May be a new slug (auto-create) or merged with an existing one. */
@@ -126,7 +118,7 @@ function criticalContext(r: ReviewRow): {
   }
 }
 
-export function LabsClient({ initialPanels, initialTrends }: Props) {
+export function LabsClient() {
   const router = useRouter()
   const [busy, startTransition] = useTransition()
 
@@ -637,11 +629,12 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
         </div>
       )}
 
-      {/* ─── Panels list ─────────────────────────────────────────────── */}
-      <PanelsList panels={initialPanels} />
-
-      {/* ─── Key-marker trends + picker ─────────────────────────────── */}
-      <MarkerTrends trends={initialTrends} />
+      {/* CTA back to the dashboard Labs tab — data viz (panels list +
+          trends) lives there, rendered in the dashboard palette. This
+          page is intentionally just the import tool. */}
+      <Link href="/" className="labs-cta-link">
+        See your labs in the dashboard <ArrowRight size={14} />
+      </Link>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   fetchFingersticks,
 } from '@/app/lib/dashboard/daily-metrics'
 import { fetchBaselinesPayload } from '@/app/lib/dashboard/baselines'
+import { fetchAllPanels, fetchAllMarkerTrends } from '@/app/labs/actions'
 import { fetchRecentManual } from '@/app/log/_lib/fetch-recent'
 import './dashboard.css'
 
@@ -28,13 +29,15 @@ export default async function DashboardPage() {
   // Recent manual entries reuse Slice 3's fetcher for the Timeline panel.
   // Baselines payload (Slice 7.3) is its own bounded pull off metric_drift +
   // context_periods + anchor_sets + med_changes (4 parallel sub-queries).
-  const [series, cgm24h, recent, baselines, spo2Night, fingersticks] = await Promise.all([
+  const [series, cgm24h, recent, baselines, spo2Night, fingersticks, labPanels, labTrends] = await Promise.all([
     fetchDailyMetrics(90),
     fetchCgm24h(),
     fetchRecentManual(20),
     fetchBaselinesPayload(),
     fetchLatestSpo2Night(),
     fetchFingersticks(14),
+    fetchAllPanels(),
+    fetchAllMarkerTrends(),
   ])
   const latest = await fetchLatestKpis(cgm24h)
 
@@ -47,6 +50,8 @@ export default async function DashboardPage() {
       baselines={baselines}
       spo2Night={spo2Night}
       fingersticks={fingersticks}
+      labPanels={labPanels}
+      labTrends={labTrends}
     />
   )
 }

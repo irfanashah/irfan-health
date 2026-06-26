@@ -1,10 +1,9 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-26 (session: labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store)_
+_Last updated: 2026-06-26 (session: labs UI split — `/labs` = import only; dashboard 4th tab "Labs" = data viz)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
-## Now
-Labs marker layer matured from "curated cardiac list, everything else unmapped, ranges only when the lab prints them" to **"every marker becomes a trendable canonical, with a reference range and a flag — AI-proposed where the source omits them, user-confirmed at commit, then remembered"**. Surfaced by the discharge-summary upload (many markers came back `unmapped`, no ranges, empty flags). New `lab_marker_ref_ranges` learn-as-you-go store + `lab_values.ref_source` provenance column. SACRED guardrail held: measured RESULT values are NEVER altered — the AI only proposes CONTEXT (canonical slug, standard ranges, computed flag), labelled explicitly. Confirmed knowledge (aliases + remembered ranges) overlays the LLM proposals in code, so repeated panels are deterministic + the AI is only consulted on genuinely-new markers. Same learn-as-you-go pattern as the existing alias table.
+Labs UI split per Irfan's principle: `/labs` collapsed to the import tool only (upload → review → commit); the dashboard gains a **fourth top-level tab "Labs"** rendering the imported-panels list + key-marker trend cards in dashboard palette alongside the other health signals. UI + wiring only — no data-model / migration / extraction change. The split means the import flow stays focused (no charts cluttering the upload + review) AND the data viz lives where the user actually goes to read their health data. `npm run build` clean — 28 routes; `app/labs/PanelsList.tsx` + `MarkerTrends.tsx` deleted; `labs.css` trimmed to the upload/review styles only; the tab uses dashboard tokens throughout.
 
 ## Slice ledger
 - ✅ Slices 0–5 (sources + ingestion + manual + CGM) · ⊘ 5a Dexcom Clarity (DEFERRED)
@@ -18,7 +17,8 @@ Labs marker layer matured from "curated cardiac list, everything else unmapped, 
 - ✅ Cardiac BP chart — ACC/AHA per-metric zones + combined category readout
 - ✅ Slice 6 — Labs PDF import (LLM extraction + human review + Labs section with trends)
 - ✅ Labs large-file fix — direct-to-Storage upload + mixed-document prompt
-- ✅ **Labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store**
+- ✅ Labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store
+- ✅ **Labs UI split — `/labs` = import tool only; dashboard 4th tab "Labs" = data viz**
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose floors + ODI severity + skin_temp threshold; lab markers as drift metrics; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived)
 
@@ -30,12 +30,10 @@ Unchanged for existing sources. **New surface area**:
 - **Storage bucket required:** `lab-reports` (private, ~25 MB limit) — created in the Supabase Studio UI, NOT via migration (storage DDL isn't user-writeable in SQL editor).
 
 ## Next action
-**One migration to run, then re-test the discharge summary.**
-1. **Run `migration_009_labs_ref_ranges.sql`** in Supabase (creates `lab_marker_ref_ranges` + adds `lab_values.ref_source` column + RLS + CHECK constraint). Idempotent.
-2. **Re-upload `dischargesummary1_pdf.pdf`** at `/labs`. Expect: every previously-`unmapped` marker now gets a `+ Create` slug suggestion (e.g. `neutrophils_pct` for "NEUTROPHILS %") + merge candidates (e.g. existing `neutrophils_pct` if it's in the registry); proposed ranges + computed H/L/N flags pre-filled with `proposed` provenance badges. Review (edit/merge where wrong) + commit → standard ranges persist to `lab_marker_ref_ranges`.
-3. **Re-upload the Fakeeh report.** Expect: its printed ranges/flags win (`from report` badge) — even for markers where you committed a standard from the discharge summary; the lab is authoritative for its own draw. The remembered standards still apply on the NEXT discharge-summary-style upload that omits ranges.
-4. **Eyeball `/labs` trends.** Once you've committed ≥2 panels with overlapping key markers (HbA1c, LDL, etc.), the curated cardiac trends populate. Trend cards now badge `standard band` when the normal-band shading comes from a confirmed standard rather than a lab print.
-5. Once green, the next slot is the **Withings weight extension**.
+**No migrations / no env changes** — UI + wiring only.
+1. After the push lands, open `/` — the dashboard nav should now show four tabs (Dashboard · Correlations · Baselines & drift · Labs). Click **Labs** → expect the imported-panels list at the top (chronological, expandable to markers, out-of-range highlighting + `standard` provenance badges where the range came from the remembered store) + one trend card per cardiac key marker (LDL / HDL / non-HDL / triglycerides / Lp(a) / ApoB / hs-CRP / HbA1c / fasting glucose) with ref-band shading + flagged points + sparse-data-safe rendering, plus a picker card for any non-key marker with ≥2 draws.
+2. Open `/labs` → confirm it's now just the import tool (upload form + the review draft if you're mid-import) with a "See your labs in the dashboard →" link at the bottom.
+3. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)
 - Anchor population — `/baselines` set-anchor form built; populate post-rehab.
