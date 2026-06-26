@@ -86,6 +86,46 @@ function recomputeRowFlag(r: ReviewRow): ReviewRow['flag'] {
   })
 }
 
+/**
+ * Returns the load-bearing context for a critical flag — the threshold
+ * that was crossed and the row's display label. Used by the review UI
+ * to render the loud "PANIC — confirm" callout on HH/LL rows so a
+ * critical flag is NEVER set silently. Null for non-critical rows
+ * (common case stays compact).
+ *
+ * For a critical flag from a lab-printed source (r.range_source ===
+ * 'reported' and r.flag === 'HH'/'LL'), we may not have an explicit
+ * critical_low/high on the draft — the LLM just lifted the lab's flag.
+ * The callout still surfaces ("lab-printed panic") and the user
+ * confirms by leaving it.
+ */
+function criticalContext(r: ReviewRow): {
+  kind: 'HH' | 'LL'
+  thresholdLabel: string
+  source: 'lab' | 'computed'
+} | null {
+  if (r.flag !== 'HH' && r.flag !== 'LL') return null
+  const labPrinted = r.range_source === 'reported'
+  if (r.flag === 'HH') {
+    const t = r.critical_high
+    return {
+      kind: 'HH',
+      thresholdLabel: t !== null
+        ? `crosses critical high ${t}${r.ref_unit ? ' ' + r.ref_unit : ''}`
+        : 'lab-printed critical high',
+      source: labPrinted ? 'lab' : 'computed',
+    }
+  }
+  const t = r.critical_low
+  return {
+    kind: 'LL',
+    thresholdLabel: t !== null
+      ? `crosses critical low ${t}${r.ref_unit ? ' ' + r.ref_unit : ''}`
+      : 'lab-printed critical low',
+    source: labPrinted ? 'lab' : 'computed',
+  }
+}
+
 export function LabsClient({ initialPanels, initialTrends }: Props) {
   const router = useRouter()
   const [busy, startTransition] = useTransition()
@@ -263,6 +303,10 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
   }
 
   const flaggedCount = useMemo(() => rows.filter((r) => r.ui_flag).length, [rows])
+  const criticalCount = useMemo(
+    () => rows.filter((r) => r.flag === 'HH' || r.flag === 'LL').length,
+    [rows]
+  )
 
   return (
     <div className="labs-container">
@@ -369,6 +413,22 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
             </label>
           </div>
 
+          {/* Critical-flag banner — HH/LL are the highest-stakes flag
+              on the platform; for cardiac patients K/Na/glucose at panic
+              values is an arrhythmia-risk signal, not a cosmetic badge.
+              Surface a top-of-review count + "confirm each one
+              explicitly" instruction so a panic flag is never buried
+              in a 30-row panel. Common case (zero critical) hides this. */}
+          {criticalCount > 0 && (
+            <div className="labs-critical-banner">
+              <AlertCircle size={16} />
+              <span>
+                <strong>{criticalCount} critical flag{criticalCount === 1 ? '' : 's'}</strong>{' '}
+                ({criticalCount === 1 ? 'HH or LL' : 'HH/LL'}) — review each row below; commit confirms.
+              </span>
+            </div>
+          )}
+
           {/* Marker table */}
           <div className="labs-table-wrap">
             <table className="labs-table">
@@ -391,10 +451,21 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
                   // Suggested slug is "new" iff it's not already in the
                   // registry AND it's non-empty AND not 'unmapped'.
                   const isNewSlug = slug && slug !== 'unmapped' && !ALL_MARKER_SLUGS.includes(slug)
+                  const critical = criticalContext(r)
+                  // Critical class wins over flagged — red over amber
+                  // for the highest-stakes signal (cardiac arrhythmia risk
+                  // on a K/Na/glucose panic value, not a cosmetic badge).
+                  const rowClass = critical ? 'critical' : r.ui_flag ? 'flagged' : ''
                   return (
-                    <tr key={i} className={r.ui_flag ? 'flagged' : ''}>
+                    <tr key={i} className={rowClass}>
                       <td>
                         <div className="labs-cell-raw">{r.raw_marker_name}</div>
+                        {critical && (
+                          <div className="labs-cell-critical">
+                            <strong>{critical.kind} — PANIC</strong> · {critical.thresholdLabel}
+                            {critical.source === 'lab' && ' (from lab)'}
+                          </div>
+                        )}
                         {r.ui_flag && <div className="labs-cell-warn">⚠ {r.ui_flag}</div>}
                         {r.ref_text && <div className="labs-cell-sub">ref: {r.ref_text}</div>}
                         {r.text_value && <div className="labs-cell-sub">text: {r.text_value}</div>}
