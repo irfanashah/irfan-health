@@ -82,9 +82,13 @@ export function PanelsList({ panels }: Props) {
                           const result = v.numeric_value !== null
                             ? `${v.numeric_value}${v.unit ? ' ' + v.unit : ''}`
                             : v.text_value ?? '—'
-                          const ref = v.ref_low !== null && v.ref_high !== null
+                          const refNumeric = v.ref_low !== null && v.ref_high !== null
                             ? `${v.ref_low}–${v.ref_high}${v.ref_unit ? ' ' + v.ref_unit : ''}`
-                            : '—'
+                            : v.ref_low !== null
+                              ? `≥ ${v.ref_low}${v.ref_unit ? ' ' + v.ref_unit : ''}`
+                              : v.ref_high !== null
+                                ? `≤ ${v.ref_high}${v.ref_unit ? ' ' + v.ref_unit : ''}`
+                                : '—'
                           return (
                             <tr key={i} className={oor ? 'oor' : ''}>
                               <td>
@@ -94,7 +98,12 @@ export function PanelsList({ panels }: Props) {
                                 )}
                               </td>
                               <td className="labs-marker-result">{result}</td>
-                              <td className="labs-marker-ref">{ref}</td>
+                              <td className="labs-marker-ref">
+                                {refNumeric}
+                                {v.ref_source === 'standard' && (
+                                  <span className="labs-prov labs-prov-standard" style={{ marginLeft: 6 }}>standard</span>
+                                )}
+                              </td>
                               <td>
                                 {v.flag && (
                                   <span

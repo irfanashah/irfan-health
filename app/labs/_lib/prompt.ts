@@ -24,40 +24,80 @@ export const ANTHROPIC_MODEL = 'claude-sonnet-4-6'
 
 export const SYSTEM_PROMPT = `You extract structured lab/test results from medical documents.
 
+YOU HAVE TWO DISTINCT JOBS — DO NOT CONFLATE THEM.
+
+────────────────────────────────────────────────────────────────────
+JOB 1 (SACRED) — extract patient MEASUREMENTS verbatim.
+The result value, reported unit, reported reference range (if printed),
+and any printed flag are PATIENT DATA. NEVER invent, alter, round,
+re-derive, or "correct" them. They come from the document exactly as
+printed. If a value is unreadable or absent → null + a per-row note.
+Honest "I don't know" beats a guess on medical numbers.
+
+JOB 2 — propose CONTEXT for canonicalisation + missing ranges/flags.
+Canonical slug suggestions, AND — only when the report doesn't print a
+reference range — proposed population-standard adult reference ranges
+(plus a computed flag from value vs. range). These are CONTEXT, not
+measurements. They are clearly labelled in the structured output
+(range_source='proposed') and the user confirms each in review before
+anything commits.
+
+The contract: values are sacred; context is suggested.
+
+────────────────────────────────────────────────────────────────────
+
 DOCUMENT TYPES YOU MUST HANDLE:
-- Clean blood-panel lab reports (the common case — tables of markers + results + ref ranges).
-- Larger clinical documents — discharge summaries, consultation notes, admission records, progress notes — where lab results sit EMBEDDED among narrative (diagnoses, medications, course-of-stay, plans).
-Extract ALL lab/test results visible anywhere in the document, however they're presented (tables, inline sentences, bulleted lists, "Investigations" sections). IGNORE non-lab narrative — diagnoses, medications, treatment plans, course-of-stay, recommendations, free-text impressions. None of those become marker rows.
+- Clean blood-panel lab reports (tables of markers + results + ref ranges).
+- Larger clinical documents — discharge summaries, consultation notes, admission records, progress notes — where lab results sit EMBEDDED among narrative.
+Extract ALL lab/test results, however presented (tables, inline sentences, bulleted lists, "Investigations" sections). IGNORE non-lab narrative — diagnoses, medications, treatment plans, course-of-stay, recommendations, free-text impressions. None of those become marker rows.
 
-GUARDRAILS — LOAD-BEARING:
-- This is medical data. It will inform cardiac care decisions. Accuracy and honesty over completeness.
+────────────────────────────────────────────────────────────────────
+JOB 1 RULES (values, units, reported ranges, lab-printed flags)
+────────────────────────────────────────────────────────────────────
 - NEVER invent, round, infer, or back-compute values. If a number is unreadable, absent, or unclear, leave it null and add a brief note. Do not guess.
-- Preserve raw marker names VERBATIM (exactly as printed, including prefixes like "SERUM " or suffixes like " (K)" — the user will correct via a controlled vocabulary).
-- Preserve reported units VERBATIM. Don't convert. Don't normalise. The application handles canonical conversion deterministically downstream.
-- Preserve reference ranges as printed. If the range is "low-high", split into ref_low/ref_high; if it's "< 5" / "> 60" / "Negative" / qualitative, leave numeric ref nulls and put the literal text in ref_text. Reference ranges are often ABSENT in discharge summaries — leave the ref fields null, don't invent a range.
+- Preserve raw marker names VERBATIM (including prefixes like "SERUM " or suffixes like " (K)" — the user will correct via the controlled vocabulary).
+- Preserve reported units VERBATIM. Don't convert. Don't normalise.
+- Preserve REPORTED reference ranges as printed. If the range is "low-high", split into ref_low / ref_high with range_source='reported'. If it's "< 5" / "> 60" / "Negative" / qualitative, leave numeric ref_low/ref_high null and put the literal text in ref_text (still range_source='reported'). DO NOT FALL BACK to a proposed range when the report DID print one.
 - Qualitative results (Negative, Reactive, Non-reactive, blood group, urine appearance, etc.) → put the result in text_value and leave numeric_value null.
-- Flags: if a single-letter flag appears next to a result (H, L, HH, LL, N), capture it in flag. If the report uses words ("High"/"Low"/"Critical"), map to H/L/HH/LL respectively. Otherwise null.
+- Lab-printed flags: H, L, HH, LL, N → use verbatim. Words like "High"/"Low"/"Critical" → map to H/L/HH respectively. If no flag is printed, leave flag null (Job 2 will compute one from the range).
 
-FORMAT-AGNOSTIC EXTRACTION:
-- Make NO assumption about the report's layout, column order, grouping, or vendor. Some reports use tables; some use stacked key-value rows; some span multiple pages; some group markers under section headers (e.g. "ELECTROLYTE PANEL", "LIPID PANEL"). Discharge summaries may use inline sentences ("Admission labs: Troponin I 0.45 ng/mL (elevated), CK-MB 12 ng/mL …") or a small embedded table.
+────────────────────────────────────────────────────────────────────
+JOB 2 RULES (proposed slug, proposed range, proposed flag)
+────────────────────────────────────────────────────────────────────
+Canonical slug (every row):
+- Suggest a canonical marker_slug from this list when confident:
+${ALL_MARKER_SLUGS.map((s) => `  - ${s}`).join('\n')}
+- "SERUM SODIUM" or "Sodium (Na)" → sodium. "LDL CHOLESTEROL" → ldl. "Glycated Hb" / "Hemoglobin A1c" → hba1c. "NEUTROPHILS %" → neutrophils_pct (if that's in the list). Strip prefixes ("SERUM ", "PLASMA ") and suffixes (" (K)", " - Calculated") for matching.
+- If no slug fits, suggest a sensible NEW slug (lowercase, alphanumeric + underscore) — e.g. "RDW-CV" → rdw_cv. The user can confirm/merge in review.
+
+Proposed range (ONLY when the report did NOT print one for this marker):
+- Set range_source='proposed', and fill proposed_ref_low / proposed_ref_high / proposed_ref_unit with the standard ADULT reference range for this marker. ASSUME MALE SEX (single-user app, patient is male) for sex-specific markers — hemoglobin, hematocrit, ferritin, creatinine, urate, eGFR-style metrics.
+- Use widely-accepted population-standard ranges. Do not guess if you're unsure for an obscure marker — leave proposed_ref_low/high null and set range_source='proposed' with proposed_unit only.
+- Critical thresholds (proposed_critical_low / proposed_critical_high): fill ONLY for markers where panic thresholds are clinically standard (potassium, sodium, glucose, hemoglobin, calcium, hs-CRP optionally). Leave null otherwise — don't fabricate "critical" thresholds for routine markers.
+- These ranges are CONTEXT, not measurements. The UI labels them "proposed standard" so the user knows the provenance.
+
+Proposed flag (when no lab-printed flag exists):
+- Compute H / L / N from value vs the final range you're proposing.
+- HH / LL: ONLY if the value crosses an explicit critical threshold you set above. NEVER infer "critical" from "value much further out than refHigh".
+- If no range exists (you couldn't propose one), leave the flag null.
+
+────────────────────────────────────────────────────────────────────
+FORMAT-AGNOSTIC EXTRACTION
+────────────────────────────────────────────────────────────────────
+- Make NO assumption about the report's layout, column order, grouping, or vendor. Some reports use tables; some use stacked key-value rows; some span multiple pages; some group markers under section headers ("ELECTROLYTE PANEL", "LIPID PANEL"). Discharge summaries may use inline sentences or small embedded tables.
 - Extract EVERY test result visible across the entire document.
-- If a marker has a "Test Methodology" or similar column, ignore it (not stored).
-- If a row is clearly a header / footer / page number / patient demographic / report-generation timestamp, skip it.
+- If a marker has a "Test Methodology" or similar column, ignore it.
+- Skip headers / footers / page numbers / patient demographics / report-generation timestamps.
 
-DATE INTERPRETATION:
-- Many labs use DD/MM/YYYY (day-first); some US labs use MM/DD/YYYY. Look at the report's context — the lab name, hospital location, other written dates ("April 29 2026"), and impossible day values (> 12 in the first position rules out month-first) — to choose.
-- For drawn_at: prefer the lab's COLLECTION / DRAW date if present. Otherwise use the document date. In a discharge summary that spans an admission, this matters: a value drawn on admission day 1 should bucket to that date, not the discharge date. If you can't tell whether a single date refers to the draw, the admission, or the discharge, output your best guess and set dateAmbiguous: true with a brief note (e.g. "could be admission or discharge date"). NEVER silently pick.
-- If still genuinely ambiguous (e.g. 03/04/2026 with no other context), output your best guess and set dateAmbiguous: true with a note. The user will confirm in review.
+────────────────────────────────────────────────────────────────────
+DATE INTERPRETATION
+────────────────────────────────────────────────────────────────────
+- Many labs use DD/MM/YYYY (day-first); some US labs use MM/DD/YYYY. Look at the report's context — lab name, hospital location, other written dates ("April 29 2026"), and impossible day values (> 12 in the first position rules out month-first).
+- For drawn_at: prefer the lab COLLECTION / DRAW date. Otherwise use the document date. In a discharge summary spanning an admission, a value drawn on admission day 1 should bucket to that date, not the discharge date. If you can't tell, set dateAmbiguous: true with a brief note. NEVER silently pick.
 - Output drawn_at as ISO YYYY-MM-DD. Time is ignored.
 
-MARKER SLUG SUGGESTIONS:
-- For each marker, suggest a canonical marker_slug from this list when you're confident the report's name maps to one:
-${ALL_MARKER_SLUGS.map((s) => `  - ${s}`).join('\n')}
-- "SERUM SODIUM" or "Sodium (Na)" → sodium. "LDL CHOLESTEROL" → ldl. "Glycated Hb" / "Hemoglobin A1c" → hba1c. Strip prefixes ("SERUM ", "PLASMA ") and suffixes (" (K)", " - Calculated") for matching.
-- If you're not confident, leave suggested_marker_slug null. The user will pick from the dropdown in review.
-
 OUTPUT:
-- Call the extract_lab_panel tool ONCE with all extracted data. Do not output any text before or after the tool call.`
+- Call the extract_lab_panel tool ONCE with all extracted data. No text before or after the tool call.`
 
 /**
  * JSON-schema for the extract_lab_panel tool. Anthropic's tool-use forces
@@ -109,13 +149,15 @@ export const EXTRACT_TOOL = {
           type: 'object',
           required: ['raw_marker_name'],
           properties: {
+            // ─── Job 1: extracted measurements (SACRED — verbatim) ─────
             raw_marker_name: { type: 'string', description: 'Verbatim marker name as printed.' },
-            numeric_value: { type: ['number', 'null'] },
+            numeric_value: { type: ['number', 'null'], description: 'Verbatim numeric result. NEVER altered/rounded/inferred.' },
             text_value: { type: ['string', 'null'], description: 'Qualitative result (e.g. "Negative", "A+"). Null when numeric_value is set.' },
             unit: { type: ['string', 'null'], description: 'Reported unit verbatim (mg/dL, mmol/L, %, IU/L). Null if unitless.' },
-            ref_low: { type: ['number', 'null'] },
-            ref_high: { type: ['number', 'null'] },
-            ref_unit: { type: ['string', 'null'] },
+            // Reported reference range — present ONLY when the report printed one.
+            ref_low: { type: ['number', 'null'], description: 'REPORTED ref low (lab printed it). Null if the report did not print a numeric range.' },
+            ref_high: { type: ['number', 'null'], description: 'REPORTED ref high.' },
+            ref_unit: { type: ['string', 'null'], description: 'REPORTED reference unit (typically matches unit).' },
             ref_text: {
               type: ['string', 'null'],
               description: 'Reference range verbatim if it can\'t fit as low/high (e.g. "< 5", "> 60", "Negative").',
@@ -123,15 +165,48 @@ export const EXTRACT_TOOL = {
             flag: {
               type: ['string', 'null'],
               enum: ['H', 'L', 'HH', 'LL', 'N', null],
-              description: 'Out-of-range flag printed on the report. Null if no flag.',
+              description: 'LAB-PRINTED flag. Null if no flag printed (Job 2 proposes one).',
             },
+
+            // ─── Job 2: proposed context (canonical / range / flag) ─────
             suggested_marker_slug: {
               type: ['string', 'null'],
-              description: 'Canonical slug from the registry above, OR null if you\'re not confident.',
+              description: 'Canonical slug — from the registry when one fits, or a sensible new lowercase_underscore slug otherwise. Never null unless the row is unmappable.',
             },
+            range_source: {
+              type: 'string',
+              enum: ['reported', 'proposed'],
+              description: 'reported = lab printed the range above; proposed = range_low/high not printed, see proposed_ref_* below.',
+            },
+            proposed_ref_low: {
+              type: ['number', 'null'],
+              description: 'PROPOSED standard adult ref low (assume male) — populated ONLY when range_source=proposed AND a widely-accepted standard exists. Otherwise null.',
+            },
+            proposed_ref_high: {
+              type: ['number', 'null'],
+              description: 'PROPOSED standard adult ref high.',
+            },
+            proposed_ref_unit: {
+              type: ['string', 'null'],
+              description: 'Unit for the proposed standard range.',
+            },
+            proposed_critical_low: {
+              type: ['number', 'null'],
+              description: 'Critical (panic) low threshold — ONLY for markers with widely-accepted clinical critical values (K, Na, glucose, Hb, Ca). Null otherwise.',
+            },
+            proposed_critical_high: {
+              type: ['number', 'null'],
+              description: 'Critical (panic) high threshold — same conditions.',
+            },
+            proposed_flag: {
+              type: ['string', 'null'],
+              enum: ['H', 'L', 'HH', 'LL', 'N', null],
+              description: 'Flag computed from value vs the FINAL range (reported wins; else proposed). HH/LL only when crossing an explicit critical threshold. Used only when "flag" above is null.',
+            },
+
             notes: {
               type: ['string', 'null'],
-              description: 'Free-form per-value notes — e.g. "unit unrecognised", "result obscured".',
+              description: 'Free-form per-value notes — e.g. "unit unrecognised", "result obscured", "proposed range from population standard".',
             },
           },
         },

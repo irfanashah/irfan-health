@@ -32,6 +32,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { extractLabReport } from './_lib/extract'
 import { applyAliasesToDraft } from './_lib/apply-aliases'
 import { getMarker, toCanonical } from './_lib/markers'
+import { fetchRememberedRanges, overlayRangesOnDraft, PATIENT_SEX } from './_lib/ranges'
 import type { ExtractionDraft, DraftValue } from './_lib/types'
 
 const STORAGE_BUCKET = 'lab-reports'
@@ -132,19 +133,31 @@ export async function extractFromStorage(path: string): Promise<ExtractResult | 
     // Hybrid extraction (text-layer-first, vision fallback).
     const rawDraft = await extractLabReport(bytes)
 
-    // Overlay learned aliases — deterministic mappings take precedence
-    // over the LLM's per-call suggestion. The first commit of a new
-    // marker name becomes the alias used by every future report.
+    // ─── Deterministic overlays — confirmed knowledge wins over the LLM ──
+    //
+    // 1. Marker aliases: apply BEFORE looking up remembered ranges so
+    //    the slug we look the range up under is the CONFIRMED one (not
+    //    the LLM's per-call guess).
+    // 2. Remembered standard ranges: for any value whose slug has a
+    //    remembered (slug, sex) entry AND the lab didn't print a range,
+    //    overlay the remembered range + recompute the flag. This makes
+    //    repeated panels for the same marker fully deterministic —
+    //    the AI is only consulted on genuinely-new markers.
     const aliasedValues = await applyAliasesToDraft(
       supabaseService,
       rawDraft.values,
       rawDraft.panel.lab_name
     )
+    const slugs = aliasedValues
+      .map((v) => v.suggested_marker_slug)
+      .filter((s): s is string => !!s)
+    const remembered = await fetchRememberedRanges(supabaseService, slugs)
+    const finalValues = overlayRangesOnDraft(aliasedValues, remembered)
 
     return {
       ok: true,
       rawFileRef: path,
-      draft: { ...rawDraft, values: aliasedValues },
+      draft: { ...rawDraft, values: finalValues },
     }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
@@ -172,6 +185,8 @@ export interface CommitResult {
   panelId: string
   rowsWritten: number
   aliasesLearned: number
+  /** Count of newly-confirmed standard ranges persisted to lab_marker_ref_ranges. */
+  rangesLearned: number
 }
 export interface CommitError {
   ok: false
@@ -247,6 +262,12 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
     //        the marker registry when a conversion exists (else null + flag
     //        the unknown unit in the review UI — never guess).
     //      - raw_marker_name + reported unit always preserved verbatim.
+    //      - ref_source captures the provenance of the stored range
+    //        ('reported' / 'standard' / null) so future exports + the
+    //        trend-band rendering can be honest about where the range
+    //        came from. 'proposed' from the draft becomes 'standard' on
+    //        commit — the user confirmed it, so it's no longer a
+    //        proposal; it's a confirmed standard for this canonical.
     //    NOTE marker_slug is NOT NULL in the schema; rows without a confirmed
     //    slug land as 'unmapped' so they're trivial to query + re-map later.
     const valueRows = payload.values.map((v) => {
@@ -255,6 +276,13 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
         slug !== 'unmapped' && v.numeric_value !== null
           ? toCanonical(slug, v.numeric_value, v.unit)
           : { canonical_value: null, canonical_unit: null }
+      const refSource: 'reported' | 'standard' | null =
+        v.range_source === 'reported'
+          ? 'reported'
+          : (v.range_source === 'standard' || v.range_source === 'proposed') &&
+              (v.ref_low !== null || v.ref_high !== null)
+            ? 'standard'
+            : null
       return {
         panel_id: panelId,
         marker_slug: slug,
@@ -267,6 +295,7 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
         ref_low: v.ref_low,
         ref_high: v.ref_high,
         ref_unit: v.ref_unit,
+        ref_source: refSource,
         flag: v.flag,
       }
     })
@@ -308,7 +337,48 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
       // already written; learning is a bonus, not a blocker.
     }
 
-    // 5. Close out the ingestion_log row.
+    // 5. Persist learned standard reference ranges. Any row whose
+    //    range_source is 'proposed' OR 'standard' AND has a numeric
+    //    low/high becomes a confirmed standard for its canonical
+    //    marker_slug at the patient's sex. Same learn-as-you-go pattern
+    //    as aliases: `ignoreDuplicates: true` so the FIRST commit's
+    //    range wins; subsequent commits don't churn the table. Critical
+    //    thresholds (HH/LL) persist alongside when present.
+    //    'reported' ranges are NEVER persisted as standards — they're
+    //    a specific lab's range for a specific draw, not a population
+    //    standard. Only AI-proposed / standard-overlay rows feed this.
+    let rangesLearned = 0
+    const rangeRows = payload.values
+      .filter(
+        (v) =>
+          v.confirmed_marker_slug &&
+          v.confirmed_marker_slug !== 'unmapped' &&
+          (v.range_source === 'proposed' || v.range_source === 'standard') &&
+          (v.ref_low !== null || v.ref_high !== null)
+      )
+      .map((v) => ({
+        marker_slug: v.confirmed_marker_slug!,
+        sex: PATIENT_SEX,
+        ref_low: v.ref_low,
+        ref_high: v.ref_high,
+        ref_unit: v.ref_unit,
+        critical_low: v.critical_low,
+        critical_high: v.critical_high,
+      }))
+    if (rangeRows.length > 0) {
+      const { error: rangeErr, count } = await supabase
+        .from('lab_marker_ref_ranges')
+        .upsert(rangeRows, {
+          onConflict: 'marker_slug,sex',
+          ignoreDuplicates: true,
+          count: 'exact',
+        })
+      if (!rangeErr) rangesLearned = count ?? 0
+      // Range-store failure is non-fatal — the panel + values are
+      // already written; remembering is a bonus.
+    }
+
+    // 6. Close out the ingestion_log row.
     await supabase
       .from('ingestion_log')
       .update({
@@ -320,7 +390,7 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
       })
       .eq('id', logId)
 
-    return { ok: true, panelId, rowsWritten: valueRows.length, aliasesLearned }
+    return { ok: true, panelId, rowsWritten: valueRows.length, aliasesLearned, rangesLearned }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   }
@@ -350,6 +420,7 @@ export interface LabValueRow {
   ref_low: number | null
   ref_high: number | null
   ref_unit: string | null
+  ref_source: 'reported' | 'standard' | null
   flag: 'H' | 'L' | 'HH' | 'LL' | 'N' | null
 }
 
@@ -366,7 +437,7 @@ export async function fetchAllPanels(): Promise<LabPanelRow[]> {
   if (panelIds.length === 0) return []
   const { data: values } = await supabase
     .from('lab_values')
-    .select('panel_id, marker_slug, raw_marker_name, numeric_value, text_value, unit, canonical_value, canonical_unit, ref_low, ref_high, ref_unit, flag')
+    .select('panel_id, marker_slug, raw_marker_name, numeric_value, text_value, unit, canonical_value, canonical_unit, ref_low, ref_high, ref_unit, ref_source, flag')
     .in('panel_id', panelIds)
   const byPanel = new Map<string, LabValueRow[]>()
   for (const raw of (values ?? [])) {
@@ -383,6 +454,7 @@ export async function fetchAllPanels(): Promise<LabPanelRow[]> {
       ref_low: typeof row.ref_low === 'string' ? Number(row.ref_low) : row.ref_low,
       ref_high: typeof row.ref_high === 'string' ? Number(row.ref_high) : row.ref_high,
       ref_unit: row.ref_unit,
+      ref_source: (row as unknown as { ref_source: LabValueRow['ref_source'] }).ref_source ?? null,
       flag: row.flag,
     })
     byPanel.set(row.panel_id, list)
@@ -398,6 +470,7 @@ export interface MarkerTrendPoint {
   value: number
   ref_low: number | null
   ref_high: number | null
+  ref_source: 'reported' | 'standard' | null
   flag: 'H' | 'L' | 'HH' | 'LL' | 'N' | null
   unit: string
 }
@@ -418,7 +491,7 @@ export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
   const supabase = createServiceClient()
   const { data } = await supabase
     .from('lab_values')
-    .select('marker_slug, canonical_value, canonical_unit, unit, ref_low, ref_high, flag, panel_id, lab_panels!inner(drawn_at, source_slug)')
+    .select('marker_slug, canonical_value, canonical_unit, unit, ref_low, ref_high, ref_source, flag, panel_id, lab_panels!inner(drawn_at, source_slug)')
     .not('marker_slug', 'eq', 'unmapped')
     .not('canonical_value', 'is', null)
     .order('marker_slug', { ascending: true })
@@ -433,6 +506,7 @@ export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
     unit: string | null
     ref_low: number | string | null
     ref_high: number | string | null
+    ref_source: 'reported' | 'standard' | null
     flag: MarkerTrendPoint['flag']
     lab_panels: { drawn_at: string; source_slug: string } | { drawn_at: string; source_slug: string }[]
   }
@@ -449,6 +523,7 @@ export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
       value: v,
       ref_low: typeof raw.ref_low === 'string' ? Number(raw.ref_low) : raw.ref_low,
       ref_high: typeof raw.ref_high === 'string' ? Number(raw.ref_high) : raw.ref_high,
+      ref_source: raw.ref_source ?? null,
       flag: raw.flag,
       unit: raw.canonical_unit ?? raw.unit ?? '',
     })

@@ -1,10 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-26 (session: labs large-file upload fix — direct-to-Storage + mixed-document prompt)_
+_Last updated: 2026-06-26 (session: labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
-`/labs` upload was failing on PDFs > 1 MB (the STEMI discharge summary at 2.05 MB returned a bare 404). **Root cause confirmed:** the original `uploadAndExtract(formData)` routed file bytes through a Next.js server action, which silently caps request bodies at 1 MB (Vercel additionally caps full requests at ~4.5 MB). Durable fix shipped: **direct-to-browser-to-Storage upload** in two steps — `createLabUploadUrl(filename)` server action returns a signed Storage URL; browser uploads to Storage; `extractFromStorage(path)` server action downloads + extracts. File bytes never traverse a server action. Bypasses BOTH the 1 MB and ~4.5 MB limits — handles any realistic lab/discharge PDF up to the bucket's 25 MB cap. Also: `maxDuration=800` on the `/labs` segment (extract inherits); `SYSTEM_PROMPT` broadened for mixed clinical documents (discharge summaries / consult notes with labs embedded among narrative — extract labs, ignore non-lab content, surface ambiguous draw dates); `max_tokens` raised to 16k + truncation guard. No schema / alias / commit / trends change.
+Labs marker layer matured from "curated cardiac list, everything else unmapped, ranges only when the lab prints them" to **"every marker becomes a trendable canonical, with a reference range and a flag — AI-proposed where the source omits them, user-confirmed at commit, then remembered"**. Surfaced by the discharge-summary upload (many markers came back `unmapped`, no ranges, empty flags). New `lab_marker_ref_ranges` learn-as-you-go store + `lab_values.ref_source` provenance column. SACRED guardrail held: measured RESULT values are NEVER altered — the AI only proposes CONTEXT (canonical slug, standard ranges, computed flag), labelled explicitly. Confirmed knowledge (aliases + remembered ranges) overlays the LLM proposals in code, so repeated panels are deterministic + the AI is only consulted on genuinely-new markers. Same learn-as-you-go pattern as the existing alias table.
 
 ## Slice ledger
 - ✅ Slices 0–5 (sources + ingestion + manual + CGM) · ⊘ 5a Dexcom Clarity (DEFERRED)
@@ -17,7 +17,8 @@ _Authoritative live build record is `CLAUDE.md`. This file is the concise snapsh
 - ✅ Two-fix patch (TrendChart isolated-point dots + TodayAtAGlance glucose fingerstick fallback)
 - ✅ Cardiac BP chart — ACC/AHA per-metric zones + combined category readout
 - ✅ Slice 6 — Labs PDF import (LLM extraction + human review + Labs section with trends)
-- ✅ **Labs large-file fix — direct-to-Storage upload + mixed-document prompt**
+- ✅ Labs large-file fix — direct-to-Storage upload + mixed-document prompt
+- ✅ **Labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store**
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose floors + ODI severity + skin_temp threshold; lab markers as drift metrics; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived)
 
@@ -29,13 +30,12 @@ Unchanged for existing sources. **New surface area**:
 - **Storage bucket required:** `lab-reports` (private, ~25 MB limit) — created in the Supabase Studio UI, NOT via migration (storage DDL isn't user-writeable in SQL editor).
 
 ## Next action
-**No new migrations / no env changes.** Re-upload the 2 MB `dischargesummary1_pdf.pdf` at `/labs` after the push lands:
-1. Should upload (direct-to-Storage; no 404).
-2. Should extract embedded admission labs from the discharge summary narrative (troponin / CK-MB / hemogram / lipid panel / chemistries — whatever the STEMI workup printed).
-3. Should reach the review draft with `dateAmbiguous: true` if the document doesn't clearly distinguish the lab collection date from the admission/discharge dates.
-4. Review + commit. Verify rows land in `lab_panels` + `lab_values` and the cardiac key-marker trends populate (LDL / HDL / triglycerides etc. if the STEMI workup included a lipid panel).
-5. The existing Fakeeh single-panel uploads continue to work identically (small files go through the same two-step flow, no regression).
-6. Once green, the next slot is the **Withings weight extension**.
+**One migration to run, then re-test the discharge summary.**
+1. **Run `migration_009_labs_ref_ranges.sql`** in Supabase (creates `lab_marker_ref_ranges` + adds `lab_values.ref_source` column + RLS + CHECK constraint). Idempotent.
+2. **Re-upload `dischargesummary1_pdf.pdf`** at `/labs`. Expect: every previously-`unmapped` marker now gets a `+ Create` slug suggestion (e.g. `neutrophils_pct` for "NEUTROPHILS %") + merge candidates (e.g. existing `neutrophils_pct` if it's in the registry); proposed ranges + computed H/L/N flags pre-filled with `proposed` provenance badges. Review (edit/merge where wrong) + commit → standard ranges persist to `lab_marker_ref_ranges`.
+3. **Re-upload the Fakeeh report.** Expect: its printed ranges/flags win (`from report` badge) — even for markers where you committed a standard from the discharge summary; the lab is authoritative for its own draw. The remembered standards still apply on the NEXT discharge-summary-style upload that omits ranges.
+4. **Eyeball `/labs` trends.** Once you've committed ≥2 panels with overlapping key markers (HbA1c, LDL, etc.), the curated cardiac trends populate. Trend cards now badge `standard band` when the normal-band shading comes from a confirmed standard rather than a lab print.
+5. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)
 - Anchor population — `/baselines` set-anchor form built; populate post-rehab.

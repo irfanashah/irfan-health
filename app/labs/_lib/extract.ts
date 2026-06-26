@@ -17,6 +17,27 @@ import type { ExtractionDraft, ExtractionPath, DraftValue } from './types'
 // Threshold tuned to catch "just page numbers + headers" cases.
 const MIN_USABLE_TEXT_CHARS = 120
 
+interface RawDraftValue {
+  raw_marker_name?: string
+  numeric_value?: number | null
+  text_value?: string | null
+  unit?: string | null
+  ref_low?: number | null
+  ref_high?: number | null
+  ref_unit?: string | null
+  ref_text?: string | null
+  flag?: DraftValue['flag']
+  suggested_marker_slug?: string | null
+  range_source?: 'reported' | 'proposed' | null
+  proposed_ref_low?: number | null
+  proposed_ref_high?: number | null
+  proposed_ref_unit?: string | null
+  proposed_critical_low?: number | null
+  proposed_critical_high?: number | null
+  proposed_flag?: DraftValue['flag']
+  notes?: string | null
+}
+
 interface RawDraft {
   panel: {
     drawn_at: string | null
@@ -26,7 +47,7 @@ interface RawDraft {
   }
   dateAmbiguous: boolean
   extractionNote: string | null
-  values: DraftValue[]
+  values: RawDraftValue[]
 }
 
 function getClient(): Anthropic {
@@ -85,22 +106,60 @@ function normaliseDraft(raw: unknown, path: ExtractionPath): ExtractionDraft {
   // Defensive guards even though the tool schema enforces structure.
   const r = raw as RawDraft
   const values: DraftValue[] = Array.isArray(r?.values)
-    ? r.values.map((v) => ({
-        raw_marker_name: String(v.raw_marker_name ?? '').trim(),
-        numeric_value: typeof v.numeric_value === 'number' ? v.numeric_value : null,
-        text_value: typeof v.text_value === 'string' ? v.text_value.trim() : null,
-        unit: typeof v.unit === 'string' ? v.unit.trim() : null,
-        ref_low: typeof v.ref_low === 'number' ? v.ref_low : null,
-        ref_high: typeof v.ref_high === 'number' ? v.ref_high : null,
-        ref_unit: typeof v.ref_unit === 'string' ? v.ref_unit.trim() : null,
-        ref_text: typeof v.ref_text === 'string' ? v.ref_text.trim() : null,
-        flag: (['H', 'L', 'HH', 'LL', 'N'] as const).includes(v.flag as 'H') ? v.flag : null,
-        suggested_marker_slug:
-          typeof v.suggested_marker_slug === 'string' && v.suggested_marker_slug.trim()
-            ? v.suggested_marker_slug.trim()
-            : null,
-        notes: typeof v.notes === 'string' ? v.notes.trim() : null,
-      }))
+    ? r.values.map((v): DraftValue => {
+        const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+        const str = (x: unknown): string | null => (typeof x === 'string' && x.trim() ? x.trim() : null)
+        const validFlag = (x: unknown): DraftValue['flag'] =>
+          (['H', 'L', 'HH', 'LL', 'N'] as const).includes(x as 'H') ? (x as DraftValue['flag']) : null
+
+        const reportedLow = num(v.ref_low)
+        const reportedHigh = num(v.ref_high)
+        const reportedText = str(v.ref_text)
+        const labFlag = validFlag(v.flag)
+        const proposedLow = num(v.proposed_ref_low)
+        const proposedHigh = num(v.proposed_ref_high)
+        const proposedUnit = str(v.proposed_ref_unit)
+
+        // Determine the FINAL ref range + provenance.
+        //   Reported wins. Else proposed (if non-null). Else null.
+        // The remembered-standard overlay happens AFTER this in the
+        // extract pipeline (overlayRangesOnDraft) — if a remembered
+        // range exists for this slug, it overwrites a 'proposed' here.
+        let refLow = reportedLow
+        let refHigh = reportedHigh
+        let refUnit = str(v.ref_unit) ?? str(v.unit)
+        let rangeSource: DraftValue['range_source'] = null
+        if (reportedLow !== null || reportedHigh !== null || reportedText !== null) {
+          rangeSource = 'reported'
+        } else if (proposedLow !== null || proposedHigh !== null) {
+          refLow = proposedLow
+          refHigh = proposedHigh
+          refUnit = proposedUnit ?? refUnit
+          rangeSource = 'proposed'
+        }
+
+        // Final flag: lab-printed wins; else the LLM's proposed_flag.
+        // overlayRangesOnDraft re-runs computeFlag after applying any
+        // remembered range, so a remembered overlay refreshes the flag.
+        const finalFlag = labFlag ?? validFlag(v.proposed_flag)
+
+        return {
+          raw_marker_name: String(v.raw_marker_name ?? '').trim(),
+          numeric_value: num(v.numeric_value),
+          text_value: str(v.text_value),
+          unit: str(v.unit),
+          ref_low: refLow,
+          ref_high: refHigh,
+          ref_unit: refUnit,
+          ref_text: reportedText,
+          range_source: rangeSource,
+          critical_low: num(v.proposed_critical_low),
+          critical_high: num(v.proposed_critical_high),
+          flag: finalFlag,
+          suggested_marker_slug: str(v.suggested_marker_slug),
+          notes: str(v.notes),
+        }
+      })
     : []
   return {
     path,

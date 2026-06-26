@@ -11,9 +11,13 @@ export interface DraftValue {
   text_value: string | null
   /** Reported unit verbatim (mg/dL, mmol/L, %, IU/L, …). Null when unitless / absent. */
   unit: string | null
-  /** Reference range — numeric low (when reported as "low-high"). */
+  /**
+   * Final reference range — numeric low. Populated by the extract
+   * pipeline from (in order): lab-reported → remembered standard →
+   * AI-proposed standard. `range_source` records which.
+   */
   ref_low: number | null
-  /** Reference range — numeric high. */
+  /** Final reference range — numeric high. */
   ref_high: number | null
   /** Reference unit (typically matches `unit`). */
   ref_unit: string | null
@@ -23,7 +27,24 @@ export interface DraftValue {
    * review UI as-is; not used for trend band shading.
    */
   ref_text: string | null
-  /** Out-of-range flag printed on the report: H / L / HH / LL / N — or null. */
+  /**
+   * Provenance of the populated `ref_low`/`ref_high`:
+   *   'reported' — extracted from the lab report (authoritative for this draw).
+   *   'standard' — overlaid from the remembered lab_marker_ref_ranges store.
+   *   'proposed' — proposed by the LLM (no reported and no remembered range).
+   *   null       — no range available (rare; e.g. qualitative marker).
+   */
+  range_source: 'reported' | 'standard' | 'proposed' | null
+  /** Critical-low panic threshold for HH/LL flagging — only honoured when explicit. */
+  critical_low: number | null
+  /** Critical-high panic threshold for HH/LL flagging — only honoured when explicit. */
+  critical_high: number | null
+  /**
+   * Flag — final, computed or extracted:
+   *   - Lab-printed flag wins (authoritative).
+   *   - Else computed H / L / N from the final range.
+   *   - HH / LL only from an explicit lab flag or critical_low/high.
+   */
   flag: 'H' | 'L' | 'HH' | 'LL' | 'N' | null
   /** LLM-suggested canonical marker_slug (editable in the review dropdown). */
   suggested_marker_slug: string | null

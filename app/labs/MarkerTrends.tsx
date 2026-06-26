@@ -39,13 +39,32 @@ function deriveYDomain(t: MarkerTrend): [number, number] | undefined {
   return [min - pad, max + pad]
 }
 
-/** Use the latest non-null ref range (labs may report slightly different bands over time). */
-function latestRefBand(t: MarkerTrend): { low: number | null; high: number | null } {
+/**
+ * Pick the latest non-null ref range — labs print slightly different
+ * bands over time (and remembered standards exist alongside reported
+ * ranges). Prefer 'reported' over 'standard' when the latest few points
+ * have both, so a freshly-reported lab range overrides the standard.
+ * Also returns the provenance for the UI badge.
+ */
+function latestRefBand(t: MarkerTrend): {
+  low: number | null
+  high: number | null
+  source: 'reported' | 'standard' | null
+} {
+  // Walk newest → oldest. First reported wins; else first standard.
   for (let i = t.points.length - 1; i >= 0; i--) {
     const p = t.points[i]
-    if (p.ref_low !== null || p.ref_high !== null) return { low: p.ref_low, high: p.ref_high }
+    if (p.ref_source === 'reported' && (p.ref_low !== null || p.ref_high !== null)) {
+      return { low: p.ref_low, high: p.ref_high, source: 'reported' }
+    }
   }
-  return { low: null, high: null }
+  for (let i = t.points.length - 1; i >= 0; i--) {
+    const p = t.points[i]
+    if (p.ref_low !== null || p.ref_high !== null) {
+      return { low: p.ref_low, high: p.ref_high, source: p.ref_source }
+    }
+  }
+  return { low: null, high: null, source: null }
 }
 
 function TrendCard({ trend }: { trend: MarkerTrend }) {
@@ -77,6 +96,9 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
             >
               {latest.flag}
             </span>
+          )}
+          {ref.source === 'standard' && (
+            <span className="labs-prov labs-prov-standard" title="Normal band from a confirmed standard range, not this lab's printed range">standard band</span>
           )}
           <span className="labs-trend-count">{trend.points.length} draw{trend.points.length === 1 ? '' : 's'}</span>
         </div>

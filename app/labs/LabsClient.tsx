@@ -13,6 +13,8 @@ import {
 } from './actions'
 import type { ExtractionDraft, DraftValue } from './_lib/types'
 import { ALL_MARKER_SLUGS, getMarker } from './_lib/markers'
+import { bestSuggestedSlug, similarExistingSlugs } from './_lib/slug-suggest'
+import { computeFlag } from './_lib/ranges'
 import { PanelsList } from './PanelsList'
 import { MarkerTrends } from './MarkerTrends'
 import { createClient as createBrowserSupabase } from '@/lib/supabase/client'
@@ -26,14 +28,18 @@ interface Props {
 }
 
 interface ReviewRow extends DraftValue {
+  /** User-confirmed canonical slug. May be a new slug (auto-create) or merged with an existing one. */
   confirmed_marker_slug: string | null
-  /** Per-row UI flag: yellow border + warning text. */
+  /** Suggested merge candidates — existing slugs similar to the suggested/proposed one. */
+  merge_candidates: string[]
+  /** Per-row UI warning text: shown as a small note, doesn't block commit. */
   ui_flag: string | null
 }
 
-// Surface a warning when the row has no slug, no confirmed slug, an
-// unknown unit, or the LLM left a note. The user can still commit —
-// the flag is a nudge, not a block.
+// Surface a warning when the row has no slug, no value, an unknown
+// unit, or the LLM left a note. The user can still commit —
+// the warning is a nudge, not a block. Critical states are handled
+// via the flag dropdown + value highlight.
 function rowWarning(r: ReviewRow): string | null {
   const notes: string[] = []
   if (!r.confirmed_marker_slug || r.confirmed_marker_slug === 'unmapped') notes.push('unmapped marker')
@@ -41,12 +47,8 @@ function rowWarning(r: ReviewRow): string | null {
   if (r.notes) notes.push(r.notes)
   if (r.confirmed_marker_slug && r.confirmed_marker_slug !== 'unmapped' && r.unit) {
     const def = getMarker(r.confirmed_marker_slug)
-    // If the marker has a canonical unit + no conversion handled the
-    // reported unit, flag — value still stores, just no canonical.
     if (def?.canonicalUnit && def.convert) {
-      const { canonical_value } = def.convert
-        ? { canonical_value: def.convert(r.numeric_value ?? 0, r.unit) }
-        : { canonical_value: null }
+      const canonical_value = def.convert(r.numeric_value ?? 0, r.unit)
       if (r.numeric_value !== null && canonical_value === null) notes.push(`unit "${r.unit}" not converted`)
     }
   }
@@ -54,13 +56,34 @@ function rowWarning(r: ReviewRow): string | null {
 }
 
 function makeReviewRow(v: DraftValue): ReviewRow {
+  // Auto-suggest a non-empty slug for every row. The LLM's suggestion
+  // wins when present; else a code-side slugified raw name. 'unmapped'
+  // only ever appears if the user explicitly clears the dropdown.
+  const suggested = bestSuggestedSlug(v.raw_marker_name, v.suggested_marker_slug)
   const base: ReviewRow = {
     ...v,
-    confirmed_marker_slug: v.suggested_marker_slug,
+    confirmed_marker_slug: suggested,
+    merge_candidates: similarExistingSlugs(suggested),
     ui_flag: null,
   }
   base.ui_flag = rowWarning(base)
   return base
+}
+
+/**
+ * Re-compute the flag from the current row state (value + final range +
+ * critical thresholds). Honours an explicit lab flag if it's already
+ * set as `H`/`L`/etc; recomputes when null/N.
+ */
+function recomputeRowFlag(r: ReviewRow): ReviewRow['flag'] {
+  return computeFlag({
+    value: r.numeric_value,
+    refLow: r.ref_low,
+    refHigh: r.ref_high,
+    criticalLow: r.critical_low,
+    criticalHigh: r.critical_high,
+    labFlag: r.range_source === 'reported' ? r.flag : null,
+  })
 }
 
 export function LabsClient({ initialPanels, initialTrends }: Props) {
@@ -81,7 +104,7 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
 
   // Commit state
   const [commitError, setCommitError] = useState<string | null>(null)
-  const [commitOk, setCommitOk] = useState<{ rowsWritten: number; aliasesLearned: number } | null>(null)
+  const [commitOk, setCommitOk] = useState<{ rowsWritten: number; aliasesLearned: number; rangesLearned: number } | null>(null)
 
   function resetDraft() {
     setDraft(null)
@@ -168,7 +191,22 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
   function updateRow(i: number, patch: Partial<ReviewRow>) {
     setRows((prev) => {
       const next = prev.slice()
-      const merged = { ...next[i], ...patch }
+      const merged: ReviewRow = { ...next[i], ...patch }
+      // If the user changed a range / value / critical field, recompute
+      // the flag (unless they explicitly picked one — patch.flag wins).
+      const flagFieldsChanged =
+        'numeric_value' in patch ||
+        'ref_low' in patch ||
+        'ref_high' in patch ||
+        'critical_low' in patch ||
+        'critical_high' in patch
+      if (flagFieldsChanged && !('flag' in patch)) {
+        merged.flag = recomputeRowFlag(merged)
+      }
+      // If the slug changed, refresh the merge-candidates list.
+      if ('confirmed_marker_slug' in patch && merged.confirmed_marker_slug) {
+        merged.merge_candidates = similarExistingSlugs(merged.confirmed_marker_slug)
+      }
       merged.ui_flag = rowWarning(merged)
       next[i] = merged
       return next
@@ -199,6 +237,9 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
         ref_high: r.ref_high,
         ref_unit: r.ref_unit,
         ref_text: r.ref_text,
+        range_source: r.range_source,
+        critical_low: r.critical_low,
+        critical_high: r.critical_high,
         flag: r.flag,
         suggested_marker_slug: r.suggested_marker_slug,
         notes: r.notes,
@@ -211,7 +252,11 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
         setCommitError(res.error)
         return
       }
-      setCommitOk({ rowsWritten: res.rowsWritten, aliasesLearned: res.aliasesLearned })
+      setCommitOk({
+        rowsWritten: res.rowsWritten,
+        aliasesLearned: res.aliasesLearned,
+        rangesLearned: res.rangesLearned,
+      })
       resetDraft()
       router.refresh()
     })
@@ -335,105 +380,158 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
                   <th>Unit</th>
                   <th>Ref low</th>
                   <th>Ref high</th>
+                  <th>Source</th>
                   <th>Flag</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className={r.ui_flag ? 'flagged' : ''}>
-                    <td>
-                      <div className="labs-cell-raw">{r.raw_marker_name}</div>
-                      {r.ui_flag && <div className="labs-cell-warn">⚠ {r.ui_flag}</div>}
-                      {r.ref_text && <div className="labs-cell-sub">ref: {r.ref_text}</div>}
-                      {r.text_value && <div className="labs-cell-sub">text: {r.text_value}</div>}
-                    </td>
-                    <td>
-                      <select
-                        value={r.confirmed_marker_slug ?? ''}
-                        onChange={(e) => updateRow(i, { confirmed_marker_slug: e.target.value || null })}
-                      >
-                        <option value="">(unmapped)</option>
-                        {ALL_MARKER_SLUGS.map((s) => {
-                          const def = getMarker(s)
-                          return (
-                            <option key={s} value={s}>
-                              {def?.display ?? s} {def?.keyMarker ? '★' : ''}
+                {rows.map((r, i) => {
+                  const slug = r.confirmed_marker_slug ?? ''
+                  // Suggested slug is "new" iff it's not already in the
+                  // registry AND it's non-empty AND not 'unmapped'.
+                  const isNewSlug = slug && slug !== 'unmapped' && !ALL_MARKER_SLUGS.includes(slug)
+                  return (
+                    <tr key={i} className={r.ui_flag ? 'flagged' : ''}>
+                      <td>
+                        <div className="labs-cell-raw">{r.raw_marker_name}</div>
+                        {r.ui_flag && <div className="labs-cell-warn">⚠ {r.ui_flag}</div>}
+                        {r.ref_text && <div className="labs-cell-sub">ref: {r.ref_text}</div>}
+                        {r.text_value && <div className="labs-cell-sub">text: {r.text_value}</div>}
+                      </td>
+                      <td>
+                        <select
+                          value={slug}
+                          onChange={(e) => updateRow(i, { confirmed_marker_slug: e.target.value || null })}
+                        >
+                          <option value="">(unmapped)</option>
+                          {isNewSlug && (
+                            <option value={slug}>
+                              ➕ Create &quot;{slug}&quot;
                             </option>
-                          )
-                        })}
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        step="any"
-                        value={r.numeric_value ?? ''}
-                        onChange={(e) =>
-                          updateRow(i, {
-                            numeric_value: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        value={r.unit ?? ''}
-                        onChange={(e) => updateRow(i, { unit: e.target.value || null })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        step="any"
-                        value={r.ref_low ?? ''}
-                        onChange={(e) =>
-                          updateRow(i, {
-                            ref_low: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        step="any"
-                        value={r.ref_high ?? ''}
-                        onChange={(e) =>
-                          updateRow(i, {
-                            ref_high: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <select
-                        value={r.flag ?? ''}
-                        onChange={(e) =>
-                          updateRow(i, { flag: (e.target.value || null) as ReviewRow['flag'] })
-                        }
-                      >
-                        <option value=""></option>
-                        <option value="H">H</option>
-                        <option value="L">L</option>
-                        <option value="HH">HH</option>
-                        <option value="LL">LL</option>
-                        <option value="N">N</option>
-                      </select>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => removeRow(i)}
-                        className="labs-btn-icon"
-                        title="Remove this row from the draft"
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                          )}
+                          {ALL_MARKER_SLUGS.map((s) => {
+                            const def = getMarker(s)
+                            return (
+                              <option key={s} value={s}>
+                                {def?.display ?? s} {def?.keyMarker ? '★' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                        {isNewSlug && r.merge_candidates.length > 0 && (
+                          <div className="labs-cell-merge">
+                            merge with existing?{' '}
+                            {r.merge_candidates.map((c, ci) => (
+                              <button
+                                key={c}
+                                type="button"
+                                className="labs-merge-chip"
+                                onClick={() => updateRow(i, { confirmed_marker_slug: c })}
+                              >
+                                {getMarker(c)?.display ?? c}
+                                {ci < r.merge_candidates.length - 1 ? ',' : ''}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          value={r.numeric_value ?? ''}
+                          onChange={(e) =>
+                            updateRow(i, {
+                              numeric_value: e.target.value === '' ? null : Number(e.target.value),
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={r.unit ?? ''}
+                          onChange={(e) => updateRow(i, { unit: e.target.value || null })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          value={r.ref_low ?? ''}
+                          onChange={(e) =>
+                            updateRow(i, {
+                              // Editing a ref re-derives provenance: if both
+                              // refs become empty, source clears; otherwise
+                              // a user-edited range is a 'standard' (their
+                              // confirmation, not the lab's print).
+                              ref_low: e.target.value === '' ? null : Number(e.target.value),
+                              range_source: e.target.value === '' && r.ref_high === null
+                                ? null
+                                : r.range_source === 'reported'
+                                  ? 'reported'
+                                  : (r.range_source ?? 'standard'),
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          value={r.ref_high ?? ''}
+                          onChange={(e) =>
+                            updateRow(i, {
+                              ref_high: e.target.value === '' ? null : Number(e.target.value),
+                              range_source: e.target.value === '' && r.ref_low === null
+                                ? null
+                                : r.range_source === 'reported'
+                                  ? 'reported'
+                                  : (r.range_source ?? 'standard'),
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        {r.range_source === 'reported' && (
+                          <span className="labs-prov labs-prov-reported" title="Range printed on the report">from report</span>
+                        )}
+                        {r.range_source === 'standard' && (
+                          <span className="labs-prov labs-prov-standard" title="Confirmed standard from your remembered library">standard</span>
+                        )}
+                        {r.range_source === 'proposed' && (
+                          <span className="labs-prov labs-prov-proposed" title="AI-proposed population standard — confirm and it'll be remembered">proposed</span>
+                        )}
+                      </td>
+                      <td>
+                        <select
+                          value={r.flag ?? ''}
+                          onChange={(e) =>
+                            updateRow(i, { flag: (e.target.value || null) as ReviewRow['flag'] })
+                          }
+                        >
+                          <option value=""></option>
+                          <option value="H">H</option>
+                          <option value="L">L</option>
+                          <option value="HH">HH</option>
+                          <option value="LL">LL</option>
+                          <option value="N">N</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(i)}
+                          className="labs-btn-icon"
+                          title="Remove this row from the draft"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -463,7 +561,8 @@ export function LabsClient({ initialPanels, initialTrends }: Props) {
       {commitOk && !draft && (
         <div className="labs-success">
           <CheckCircle2 size={16} /> Committed {commitOk.rowsWritten} marker{commitOk.rowsWritten === 1 ? '' : 's'}
-          {commitOk.aliasesLearned > 0 && ` · learned ${commitOk.aliasesLearned} new alias${commitOk.aliasesLearned === 1 ? '' : 'es'}`}.
+          {commitOk.aliasesLearned > 0 && ` · learned ${commitOk.aliasesLearned} new alias${commitOk.aliasesLearned === 1 ? '' : 'es'}`}
+          {commitOk.rangesLearned > 0 && ` · remembered ${commitOk.rangesLearned} new standard range${commitOk.rangesLearned === 1 ? '' : 's'}`}.
         </div>
       )}
 
