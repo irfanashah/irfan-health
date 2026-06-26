@@ -53,6 +53,8 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
           </div>
         </div>
         <div className="topbar-ctrls">
+          <Link href="/report" className="diag-link">Doctor report</Link>
+          <Link href="/medications" className="diag-link">Meds</Link>
           <Link href="/baselines" className="diag-link">Set anchor</Link>
           <Link href="/diagnostics" className="diag-link">Diagnostics</Link>
           <div className="seg range-seg">

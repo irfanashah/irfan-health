@@ -1,0 +1,223 @@
+/* Doctor record — print-optimised.
+ *
+ * Two render contexts:
+ *   - Screen: lays out on a light wash, shows the "Print / Save as PDF"
+ *     toolbar so Irfan knows what to do.
+ *   - Print: hides the toolbar + any other app chrome, forces A4 margins
+ *     and per-section page breaks.
+ *
+ * Custom-SVG charts (TrendChart, CGMChart, Spo2OvernightChart, Donut,
+ * Sparkline) print as vectors; no rasterisation needed.
+ */
+
+/* ── Light wash for the on-screen view ─────────────────────────── */
+.report-doc {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 28px 48px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.report-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; margin: 0 0 16px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.report-print-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600;
+  padding: 8px 14px; border-radius: 6px;
+  background: var(--primary); color: var(--primary-foreground);
+  border: none; cursor: pointer;
+}
+.report-toolbar-meta { font-size: 11.5px; color: var(--muted-foreground); }
+
+/* ── Each report-page is a logical sheet ───────────────────────── */
+.report-page {
+  background: white;
+  color: black;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 28px 30px;
+  margin: 0 0 20px;
+}
+.report-page-1 { border-top-width: 4px; border-top-color: var(--primary); }
+
+.report-header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #ddd; }
+.report-title { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; margin: 0; color: black; }
+.report-subtitle { font-size: 12.5px; color: #444; margin-top: 4px; line-height: 1.5; }
+.report-meta { font-size: 11px; color: #777; margin-top: 6px; font-style: italic; }
+
+.report-section { margin: 14px 0; }
+.report-section-title {
+  font-size: 13.5px; font-weight: 700; color: black;
+  margin: 0 0 8px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid #eee; padding-bottom: 3px;
+}
+.report-page-title {
+  font-size: 18px; font-weight: 800; letter-spacing: -0.01em;
+  margin: 0 0 14px; color: black;
+}
+.report-h3 {
+  font-size: 13px; font-weight: 700; color: black;
+  margin: 16px 0 6px; border-bottom: 1px solid #eee; padding-bottom: 3px;
+}
+.report-h3-safety { color: #b91c1c; }
+
+.report-empty { color: #888; font-style: italic; font-size: 12px; padding: 4px 0; }
+
+/* ── Meds list ─────────────────────────────────────────────────── */
+.report-meds { margin: 0; padding-left: 18px; list-style: disc; }
+.report-meds li { padding: 2px 0; }
+.report-meds-freq { color: #555; }
+.report-meds-notes { color: #777; font-style: italic; font-size: 11.5px; }
+
+/* ── Tile layout (BP, HR/HRV, O2, drift cards) ─────────────────── */
+.report-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  margin: 14px 0;
+}
+.report-tile {
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.report-tile-wide { grid-column: span 1; }
+.report-tile-title {
+  font-size: 11.5px; font-weight: 700; color: #333; margin: 0 0 6px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.report-tile-value {
+  font-size: 22px; font-weight: 800; color: black; line-height: 1;
+}
+.report-tile-unit { font-size: 11px; color: #777; margin-left: 4px; font-weight: 600; }
+.report-tile-tag { font-size: 12.5px; font-weight: 700; margin-top: 3px; }
+.report-tile-meta { font-size: 11px; color: #777; margin-top: 3px; font-style: italic; }
+.report-tile-spark { margin-top: 8px; }
+.report-tile-spark-pair { display: flex; flex-direction: column; gap: 2px; }
+
+.report-tile-pair { display: flex; gap: 16px; margin-top: 4px; }
+.report-tile-pair-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.report-tile-mini-label {
+  font-size: 10.5px; color: #777; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.report-tile-mini-val { font-size: 18px; font-weight: 700; color: black; }
+
+.report-tag {
+  display: inline-block; font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: #555; background: #eee; padding: 1px 6px; border-radius: 3px;
+  margin-left: 6px;
+}
+
+/* ── Tables ────────────────────────────────────────────────────── */
+.report-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0;
+}
+.report-table th {
+  text-align: left; font-weight: 700; color: #555;
+  padding: 5px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 1px solid #ccc;
+}
+.report-table td {
+  padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top;
+}
+.report-table tr.oor td { background: #fff7e6; }
+.report-table .num { font-variant-numeric: tabular-nums; }
+.report-table .unit { color: #777; font-size: 10.5px; }
+.report-table-compact td, .report-table-compact th { padding: 3px 6px; font-size: 11px; }
+.report-prov { font-size: 10px; color: #888; font-style: italic; }
+
+.report-flag {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid currentColor;
+}
+.report-flag-h, .report-flag-l { color: #b45309; }
+.report-flag-hh, .report-flag-ll { color: #b91c1c; }
+.report-flag-n { color: #15803d; }
+
+/* ── Drift list (page 1) + drift detail page ───────────────────── */
+.report-drift-list { margin: 0; padding-left: 16px; list-style: disc; }
+.report-drift-list li { padding: 2px 0; line-height: 1.4; }
+.report-drift-safety { color: #b91c1c; }
+.report-drift-detail { margin: 0; padding-left: 18px; list-style: disc; }
+.report-drift-detail li { padding: 3px 0; }
+.report-drift-steady { font-size: 12px; color: #555; }
+.report-drift-overall {
+  padding: 10px 14px; margin: 8px 0 16px;
+  background: #fafafa; border: 1px solid #eee;
+  border-left: 3px solid var(--primary); border-radius: 4px;
+}
+
+/* ── Labs history + per-marker trend grid ──────────────────────── */
+.report-labs-history { display: flex; flex-direction: column; gap: 18px; }
+.report-panel { border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; background: white; }
+.report-panel-head { font-size: 12px; color: #333; margin-bottom: 4px; }
+.report-panel-lab { color: #555; }
+.report-panel-md { color: #777; font-style: italic; }
+
+.report-trend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.report-trend-card { border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; background: white; }
+.report-trend-title { font-size: 12px; font-weight: 700; margin: 0 0 4px; color: black; }
+.report-trend-meta { font-size: 10.5px; color: #777; font-weight: 500; }
+.report-key-star { color: #b45309; }
+
+/* ── TIR legend on the glucose page ────────────────────────────── */
+.report-tir-legend { list-style: none; margin: 8px 0 0; padding: 0; font-size: 11.5px; }
+.report-tir-legend li { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: #444; }
+.report-tir-legend .dot { width: 9px; height: 9px; border-radius: 50%; }
+
+.report-footer {
+  margin-top: 18px; padding-top: 10px; border-top: 1px solid #ddd;
+  font-size: 10.5px; color: #777; font-style: italic; line-height: 1.5;
+}
+
+/* ── Print rules — A4, no app chrome, page breaks per section ──── */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .print-hide { display: none !important; }
+  .report-doc {
+    max-width: none; margin: 0; padding: 0;
+    background: white; color: black; font-size: 11.5px;
+  }
+  .report-page {
+    background: white; color: black;
+    border: none; border-radius: 0;
+    padding: 0;
+    margin: 0;
+    /* page-1 is the first sheet; every subsequent .report-page starts a
+       new sheet via page-break-before. The :first-of-type override
+       keeps page 1 from inheriting a leading blank page in some PDF
+       engines. */
+    page-break-before: always;
+    page-break-inside: auto;
+  }
+  .report-page:first-of-type { page-break-before: auto; }
+
+  /* Don't let tables / charts split mid-row / mid-chart. */
+  .report-tile, .report-panel, .report-trend-card { page-break-inside: avoid; }
+  .report-table tr { page-break-inside: avoid; }
+  .report-h3 { page-break-after: avoid; }
+  .report-page-title { page-break-after: avoid; }
+
+  /* Hide the dashboard's app chrome if it sneaks in via shared layout. */
+  .topbar, .tabnav, .foot { display: none !important; }
+
+  /* Browser link underlines + colour off in print. */
+  a, a:visited { color: black; text-decoration: none; }
+}

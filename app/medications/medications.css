@@ -1,0 +1,86 @@
+/* Medications page — small editable list. Scoped under .meds-page so it
+   doesn't leak. Uses the same shadcn-ish tokens as the /log + /labs
+   import pages (not the dashboard palette). */
+
+.meds-page {
+  max-width: 760px; margin: 0 auto; padding: 24px 20px 48px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.meds-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px;
+}
+.meds-section-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; color: var(--foreground);
+  margin: 0 0 10px;
+}
+.meds-empty { font-size: 12.5px; color: var(--muted-foreground); font-style: italic; padding: 8px 0; }
+
+/* Add form */
+.meds-form {
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px 12px; align-items: end;
+}
+.meds-form label { display: flex; flex-direction: column; gap: 4px; }
+.meds-form label.full { grid-column: 1 / -1; }
+.meds-form span {
+  font-size: 11px; color: var(--muted-foreground); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.meds-form input {
+  padding: 6px 8px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--background); color: var(--foreground);
+}
+
+.meds-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600;
+  padding: 7px 12px; border-radius: 6px; border: 1px solid transparent; cursor: pointer;
+}
+.meds-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.meds-btn-primary { background: var(--primary); color: var(--primary-foreground); }
+.meds-btn-ghost {
+  background: transparent; color: var(--muted-foreground); border-color: var(--border);
+}
+.meds-btn-ghost:hover { color: var(--foreground); }
+
+.meds-error {
+  font-size: 12.5px; padding: 8px 12px; margin-top: 10px; border-radius: 6px;
+  color: var(--destructive); background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+.meds-ok {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; padding: 8px 12px; margin-top: 10px; border-radius: 6px;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* Active + archived lists */
+.meds-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.meds-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.meds-row-archived { opacity: 0.6; background: color-mix(in srgb, var(--muted) 40%, transparent); }
+.meds-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.meds-row-name { font-size: 13.5px; color: var(--foreground); }
+.meds-row-dose {
+  font-weight: 600; color: var(--muted-foreground); margin-left: 8px;
+}
+.meds-row-meta { font-size: 12px; color: var(--muted-foreground); display: flex; gap: 14px; flex-wrap: wrap; }
+.meds-row-notes { font-style: italic; }
+.meds-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.meds-edit-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 2fr auto; gap: 6px; width: 100%; align-items: center;
+}
+.meds-edit-row input {
+  padding: 5px 7px; font-size: 12.5px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--background); color: var(--foreground);
+}
+
+@media (max-width: 700px) {
+  .meds-form { grid-template-columns: 1fr 1fr; }
+  .meds-edit-row { grid-template-columns: 1fr 1fr; }
+}

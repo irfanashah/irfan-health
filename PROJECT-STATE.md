@@ -1,9 +1,10 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-26 (session: labs UI split — `/labs` = import only; dashboard 4th tab "Labs" = data viz)_
+_Last updated: 2026-06-26 (session: printable doctor record — /report + editable medications list)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
-Labs UI split per Irfan's principle: `/labs` collapsed to the import tool only (upload → review → commit); the dashboard gains a **fourth top-level tab "Labs"** rendering the imported-panels list + key-marker trend cards in dashboard palette alongside the other health signals. UI + wiring only — no data-model / migration / extraction change. The split means the import flow stays focused (no charts cluttering the upload + review) AND the data viz lives where the user actually goes to read their health data. `npm run build` clean — 28 routes; `app/labs/PanelsList.tsx` + `MarkerTrends.tsx` deleted; `labs.css` trimmed to the upload/review styles only; the tab uses dashboard tokens throughout.
+## Now
+**The platform payoff** — `/report` ships: a printable doctor record (browser print → Save as PDF, no PDF library). Page 1 is the 10-second cardiac snapshot (header with STEMI + LAD + EF history → current meds → BP + ACC/AHA category + sparkline → RHR/HRV → cardiac labs table with flags + Δ-vs-prior arrows → overnight oxygen + notable drift bullets → disclaimer). Detail pages follow on their own sheets via `@page A4` + `page-break-before: always`: cardiac trends · glucose · sleep & overnight O2 · full lab history · per-marker lab trend grid · baselines & drift summary. Reads existing data only via the dashboard's readers — the one new piece is the **editable medications list** (`migration_010` + `/medications` page + 7 seeded current meds, deactivate-not-delete). `bpCategory` + `buildDriftPanelData` reused so the report agrees with the dashboard by construction. `npm run build` clean — 30 routes (`/medications` + `/report` added).
 
 ## Slice ledger
 - ✅ Slices 0–5 (sources + ingestion + manual + CGM) · ⊘ 5a Dexcom Clarity (DEFERRED)
@@ -18,7 +19,8 @@ Labs UI split per Irfan's principle: `/labs` collapsed to the import tool only (
 - ✅ Slice 6 — Labs PDF import (LLM extraction + human review + Labs section with trends)
 - ✅ Labs large-file fix — direct-to-Storage upload + mixed-document prompt
 - ✅ Labs marker-system maturation — auto-canonicals + AI-proposed ranges + computed flags + remembered-range store
-- ✅ **Labs UI split — `/labs` = import tool only; dashboard 4th tab "Labs" = data viz**
+- ✅ Labs UI split — `/labs` = import tool only; dashboard 4th tab "Labs" = data viz
+- ✅ **Doctor record (`/report`) + editable medications list**
 - → **Withings weight extension** (small follow-on) — NEXT
 - ⬜ Anchor population (post-rehab); confirm Dr. Jose floors + ODI severity + skin_temp threshold; lab markers as drift metrics; doctor-record export; Slice 8 — Discipline layer; fasting cross-check (Contour vs CGM-derived)
 
@@ -30,10 +32,10 @@ Unchanged for existing sources. **New surface area**:
 - **Storage bucket required:** `lab-reports` (private, ~25 MB limit) — created in the Supabase Studio UI, NOT via migration (storage DDL isn't user-writeable in SQL editor).
 
 ## Next action
-**No migrations / no env changes** — UI + wiring only.
-1. After the push lands, open `/` — the dashboard nav should now show four tabs (Dashboard · Correlations · Baselines & drift · Labs). Click **Labs** → expect the imported-panels list at the top (chronological, expandable to markers, out-of-range highlighting + `standard` provenance badges where the range came from the remembered store) + one trend card per cardiac key marker (LDL / HDL / non-HDL / triglycerides / Lp(a) / ApoB / hs-CRP / HbA1c / fasting glucose) with ref-band shading + flagged points + sparse-data-safe rendering, plus a picker card for any non-key marker with ≥2 draws.
-2. Open `/labs` → confirm it's now just the import tool (upload form + the review draft if you're mid-import) with a "See your labs in the dashboard →" link at the bottom.
-3. Once green, the next slot is the **Withings weight extension**.
+1. **Run `migration_010_medications.sql`** in Supabase — creates the `medications` table + RLS + seeds your current 7-med regimen (Concor / Crestor / Brilinta / Ezetrol / Tritace / Aspirin Protect / Pantozol). Idempotent.
+2. After the deploy, hit **Doctor report** in the dashboard header → opens `/report` → click "Print / Save as PDF" → expect ~5–6 A4 pages: page 1 = cardiac snapshot; then cardiac trends · glucose · sleep & overnight O2 · lab history · per-marker lab trends · baselines & drift summary.
+3. Verify it reads well on paper before the next Dr. Jose appointment. If a med has changed in the meantime, edit it at `/medications` (Meds link in the header) — `active=false` for stopped meds, the report only shows active.
+4. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)
 - Anchor population — `/baselines` set-anchor form built; populate post-rehab.
