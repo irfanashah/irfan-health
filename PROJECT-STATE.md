@@ -1,6 +1,6 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-26 (session: printable doctor record — /report + editable medications list)_
+_Last updated: 2026-06-26 (session: doctor record shipped to prod — commit `a493ae2` pushed; migration_010 SQL handed over; explained `/medications` edit flow + BD abbreviation)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
@@ -32,9 +32,9 @@ Unchanged for existing sources. **New surface area**:
 - **Storage bucket required:** `lab-reports` (private, ~25 MB limit) — created in the Supabase Studio UI, NOT via migration (storage DDL isn't user-writeable in SQL editor).
 
 ## Next action
-1. **Run `migration_010_medications.sql`** in Supabase — creates the `medications` table + RLS + seeds your current 7-med regimen (Concor / Crestor / Brilinta / Ezetrol / Tritace / Aspirin Protect / Pantozol). Idempotent.
-2. After the deploy, hit **Doctor report** in the dashboard header → opens `/report` → click "Print / Save as PDF" → expect ~5–6 A4 pages: page 1 = cardiac snapshot; then cardiac trends · glucose · sleep & overnight O2 · lab history · per-marker lab trends · baselines & drift summary.
-3. Verify it reads well on paper before the next Dr. Jose appointment. If a med has changed in the meantime, edit it at `/medications` (Meds link in the header) — `active=false` for stopped meds, the report only shows active.
+1. **Run `migration_010_medications.sql`** in Supabase if not already done — creates the `medications` table + RLS + seeds your current 7-med regimen (Concor / Crestor / Brilinta / Ezetrol / Tritace / Aspirin Protect / Pantozol). Idempotent.
+2. Wait for Vercel to deploy `a493ae2` (already pushed). Then hit **Meds** in the header → correct the seeded frequencies (e.g. Brilinta "BD" → "morning + evening, 8am + 8pm"). Free-text `frequency` field; report prints verbatim.
+3. Hit **Doctor report** → `/report` → click "Print / Save as PDF" → expect ~5–6 A4 pages: page 1 = cardiac snapshot; then cardiac trends · glucose · sleep & overnight O2 · lab history · per-marker lab trends · baselines & drift summary. Verify it reads well on paper before the next Dr. Jose appointment.
 4. Once green, the next slot is the **Withings weight extension**.
 
 ## Open items (non-blocking)
