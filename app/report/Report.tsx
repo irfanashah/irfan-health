@@ -1,5 +1,7 @@
 'use client'
 
+import { useMemo } from 'react'
+
 // Doctor record — print-optimised, browser-print → PDF.
 //
 // Why all-in-one client component (rather than per-section files): the
@@ -34,7 +36,10 @@ import type {
 } from '@/app/lib/dashboard/daily-metrics'
 import type { LabPanelRow, LabValueRow, MarkerTrend } from '@/app/labs/actions'
 import type { MedicationRow } from '@/app/medications/actions'
-import type { DriftPanelData } from '@/components/dashboard/drift/present'
+import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
+import { DRIFT_METRICS } from '@/components/dashboard/drift-config'
+import { evaluateMetric } from '@/components/dashboard/drift/evaluate'
+import { buildDriftPanelData, type DriftPanelData } from '@/components/dashboard/drift/present'
 import {
   CARDIAC_KEY_MARKERS,
   buildCardiacLabSummary,
@@ -56,7 +61,7 @@ interface Props {
   labPanels: LabPanelRow[]
   labTrends: MarkerTrend[]
   medications: MedicationRow[]
-  driftPanel: DriftPanelData
+  baselines: BaselinesPayload
 }
 
 // STEMI date — also in thresholds.ts as STEMI_DATE; mirrored here as a
@@ -110,8 +115,22 @@ function rhrHrvYDomain(rows: DailyMetricRow[]): [number, number] | undefined {
 export function Report(props: Props) {
   const {
     windowDays, generatedAt, series, cgm24h, latest, spo2Night, fingersticks,
-    labPanels, labTrends, medications, driftPanel,
+    labPanels, labTrends, medications, baselines,
   } = props
+
+  // Build the drift panel client-side (mirrors BaselinesDriftPanel).
+  // Doing this server-side would push function fields like signal.fmt
+  // across the server→client boundary, which Next.js rejects.
+  const driftPanel = useMemo<DriftPanelData>(() => {
+    const verdicts = DRIFT_METRICS.map((m) =>
+      evaluateMetric(m, baselines.drift[m] ?? [], {
+        anchor: baselines.anchor,
+        contextToday: baselines.context,
+        medChanges: baselines.medChanges,
+      })
+    )
+    return buildDriftPanelData(verdicts, baselines.drift, 30)
+  }, [baselines])
 
   const bpCat = latest.bp ? bpCategory(latest.bp.sys, latest.bp.dia) : null
   const cardiacLabs = buildCardiacLabSummary(labTrends)

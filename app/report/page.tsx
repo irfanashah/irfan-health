@@ -10,9 +10,6 @@ import {
 import { fetchBaselinesPayload } from '@/app/lib/dashboard/baselines'
 import { fetchAllPanels, fetchAllMarkerTrends } from '@/app/labs/actions'
 import { fetchActiveMedications } from '@/app/medications/actions'
-import { evaluateMetric } from '@/components/dashboard/drift/evaluate'
-import { buildDriftPanelData } from '@/components/dashboard/drift/present'
-import { DRIFT_METRICS } from '@/components/dashboard/drift-config'
 import { Report } from './Report'
 import '../dashboard.css'
 import './report.css'
@@ -59,19 +56,11 @@ export default async function ReportPage() {
   ])
   const latest = await fetchLatestKpis(cgm24h)
 
-  // Drift verdicts — feed the page-1 "Notable drift" callout + the
-  // detail-page drift summary. Same buildDriftPanelData the Baselines
-  // & drift tab uses, so the report agrees with what the user sees on
-  // the dashboard.
-  const driftVerdicts = DRIFT_METRICS.map((m) =>
-    evaluateMetric(m, baselines.drift[m] ?? [], {
-      anchor: baselines.anchor,
-      contextToday: baselines.context,
-      medChanges: baselines.medChanges,
-    })
-  )
-  const driftPanel = buildDriftPanelData(driftVerdicts, baselines.drift, 30)
-
+  // Pass the raw baselines payload (serializable) to the client — Report
+  // builds the DriftPanelData itself via the same buildDriftPanelData the
+  // Baselines & drift tab uses (see gotcha #107). Building it server-side
+  // would push function fields (e.g. signal.fmt) across the server→client
+  // boundary, which Next.js rejects.
   return (
     <div className="report-doc">
       <Report
@@ -85,7 +74,7 @@ export default async function ReportPage() {
         labPanels={labPanels}
         labTrends={labTrends}
         medications={medications}
-        driftPanel={driftPanel}
+        baselines={baselines}
       />
     </div>
   )
