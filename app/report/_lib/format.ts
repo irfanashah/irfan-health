@@ -3,6 +3,7 @@
 // (formatted dates use en-GB style so the doctor doesn't see a US date).
 
 import type { MarkerTrend } from '@/app/labs/actions'
+import { evaluateLabMarker, type LabGoalState, type LabTarget, type LabTrendDir } from '@/app/labs/_lib/targets'
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -53,6 +54,22 @@ export interface CardiacLabSummary {
   delta: number | null
   /** 'up' | 'down' | 'flat' | null — mini-direction indicator. */
   direction: 'up' | 'down' | 'flat' | null
+  /** Clinical target (goal-based, provisional). Null when no target set or unit mismatch. */
+  target: LabTarget | null
+  goalState: LabGoalState | null
+  /** Resolved numeric goal-line (handles Lp(a) mg/dL↔nmol/L). */
+  goalLine: number | null
+  /** Toward-goal trend; null for single-draw markers. */
+  goalTrend: LabTrendDir
+  /** LDL %-reduction-from-baseline (only set when target.reductionGoalPct configured). */
+  reductionPct: number | null
+  meetsReductionGoal: boolean | null
+  /** Earliest draw (used to label the LDL reduction line). */
+  baseline: number | null
+  /** Lp(a) / HDL are non-modifiable; render "off-goal" as informational, not actionable. */
+  modifiable: boolean
+  /** Set when the lab's unit can't be unit-matched to the target. */
+  unmatchedReason: string | null
 }
 
 /**
@@ -76,11 +93,14 @@ export function buildCardiacLabSummary(trends: MarkerTrend[]): CardiacLabSummary
       const eps = Math.abs(last.value) * 0.02 || 0.01
       direction = Math.abs(delta) < eps ? 'flat' : delta > 0 ? 'up' : 'down'
     }
+    // Clinical-target evaluation — single source of truth, same call the
+    // dashboard's Labs tab makes, so report ↔ dashboard agree by construction.
+    const status = evaluateLabMarker(t)
     out.push({
       slug,
       display: t.display,
       latest: last.value,
-      unit: t.canonical_unit ?? last.unit ?? '',
+      unit: last.unit ?? t.canonical_unit ?? '',
       drawnAt: last.drawn_at,
       refLow: last.ref_low,
       refHigh: last.ref_high,
@@ -88,6 +108,15 @@ export function buildCardiacLabSummary(trends: MarkerTrend[]): CardiacLabSummary
       flag: last.flag,
       delta,
       direction,
+      target: status.target,
+      goalState: status.goalState,
+      goalLine: status.goalLine,
+      goalTrend: status.trend,
+      reductionPct: status.reductionPct,
+      meetsReductionGoal: status.meetsReductionGoal,
+      baseline: status.baseline,
+      modifiable: status.modifiable,
+      unmatchedReason: status.unmatchedReason,
     })
   }
   return out

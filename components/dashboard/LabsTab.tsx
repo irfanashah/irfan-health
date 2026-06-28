@@ -7,6 +7,14 @@ import { PanelHeader } from './ui/PanelHeader'
 import { TrendChart } from './charts/TrendChart'
 import { getMarker, KEY_MARKER_SLUGS } from '@/app/labs/_lib/markers'
 import type { LabPanelRow, LabValueRow, MarkerTrend, MarkerTrendPoint } from '@/app/labs/actions'
+import {
+  evaluateLabMarker,
+  LAB_TARGETS,
+  LAB_TARGET_PROVISIONAL_NOTE,
+  type LabGoalState,
+  type LabMarkerStatus,
+  type LabTrendDir,
+} from '@/app/labs/_lib/targets'
 
 interface Props {
   panels: LabPanelRow[]
@@ -33,6 +41,24 @@ function flagColor(flag: LabValueRow['flag']): string {
   return 'var(--text-dim)'
 }
 
+const GOAL_COLOR: Record<LabGoalState, string> = {
+  'at-goal': 'var(--teal)',
+  'near': 'var(--amber)',
+  'off-goal': 'var(--red)',
+}
+const GOAL_LABEL: Record<LabGoalState, string> = {
+  'at-goal': 'at goal',
+  'near': 'near goal',
+  'off-goal': 'off goal',
+}
+
+function trendArrowMeta(d: LabTrendDir): { arrow: string; color: string; label: string } {
+  if (d === 'improving') return { arrow: '↘', color: 'var(--teal)', label: 'improving toward goal' }
+  if (d === 'worsening') return { arrow: '↗', color: 'var(--red)', label: 'moving away from goal' }
+  if (d === 'flat') return { arrow: '→', color: 'var(--text-dim)', label: 'flat vs prior' }
+  return { arrow: '', color: 'var(--text-dim)', label: 'single draw — trend needs a second' }
+}
+
 interface TrendDay {
   date: Date
   value: number | null
@@ -47,14 +73,17 @@ function buildSeries(t: MarkerTrend): TrendDay[] {
   }))
 }
 
-/** Pad the y-domain around the data + the reference band. */
-function deriveYDomain(t: MarkerTrend): [number, number] | undefined {
+/** Pad the y-domain around the data + ref band + goal line/band. */
+function deriveYDomain(t: MarkerTrend, status: LabMarkerStatus | null): [number, number] | undefined {
   const vals: number[] = []
   for (const p of t.points) {
     vals.push(p.value)
     if (p.ref_low !== null) vals.push(p.ref_low)
     if (p.ref_high !== null) vals.push(p.ref_high)
   }
+  if (status?.goalLine !== null && status?.goalLine !== undefined) vals.push(status.goalLine)
+  // hba1c-style range: pull the watchHigh into the domain too.
+  if (status?.target?.watchHigh !== undefined) vals.push(status.target.watchHigh)
   if (vals.length === 0) return undefined
   const min = Math.min(...vals)
   const max = Math.max(...vals)
@@ -204,12 +233,35 @@ function PanelsCard({ panels }: { panels: LabPanelRow[] }) {
 
 function TrendCard({ trend }: { trend: MarkerTrend }) {
   const def = getMarker(trend.marker_slug)
-  const unit = trend.canonical_unit ?? trend.points[trend.points.length - 1]?.unit ?? ''
-  const yDomain = deriveYDomain(trend)
+  const status = LAB_TARGETS[trend.marker_slug] ? evaluateLabMarker(trend) : null
+  const unit = status?.unit || trend.canonical_unit || trend.points[trend.points.length - 1]?.unit || ''
+  const yDomain = deriveYDomain(trend, status)
   const ref = latestRefBand(trend)
   const series = buildSeries(trend)
   const latest = trend.points[trend.points.length - 1]
   const isKey = def?.keyMarker ?? false
+  const informational = status && !status.modifiable
+  const trendMeta = status ? trendArrowMeta(status.trend) : null
+
+  // Goal-line / goal-band setup.
+  // - For 'lower' / 'higher' targets: a dashed reference line at goalLine
+  //   (via TrendChart's `divider` prop — distinct from the lab ref band
+  //   so it doesn't read as "normal range").
+  // - For 'range' (hba1c): a shaded "at-goal" band [-∞, targetHigh] +
+  //   a "watch" band (targetHigh, watchHigh].
+  const target = status?.target
+  let goalDivider: { value: number; labelAbove?: string; labelBelow?: string } | undefined
+  const extraBands: { from: number; to: number; color: string; opacity: number }[] = []
+  if (target?.goalDirection === 'lower' && status?.goalLine !== null && yDomain) {
+    goalDivider = { value: status!.goalLine!, labelAbove: 'goal' }
+  } else if (target?.goalDirection === 'higher' && status?.goalLine !== null && yDomain) {
+    goalDivider = { value: status!.goalLine!, labelBelow: 'goal' }
+  } else if (target?.goalDirection === 'range' && target.targetHigh !== undefined && yDomain) {
+    extraBands.push({ from: yDomain[0], to: target.targetHigh, color: 'var(--teal)', opacity: 0.08 })
+    if (target.watchHigh !== undefined) {
+      extraBands.push({ from: target.targetHigh, to: target.watchHigh, color: 'var(--amber)', opacity: 0.08 })
+    }
+  }
 
   return (
     <Card className="col-6">
@@ -234,6 +286,29 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
                 {latest.flag}
               </span>
             )}
+            {status?.goalState && (
+              <span
+                className="labs-tab-goal-pill"
+                style={{ color: GOAL_COLOR[status.goalState], borderColor: GOAL_COLOR[status.goalState] }}
+                title={target?.label}
+              >
+                {GOAL_LABEL[status.goalState]}
+              </span>
+            )}
+            {status && !status.goalState && status.unmatchedReason && (
+              <span className="labs-tab-goal-pill labs-tab-goal-unmatched" title={status.unmatchedReason}>
+                unit not matched
+              </span>
+            )}
+            {trendMeta && trendMeta.arrow && (
+              <span
+                className="labs-tab-goal-arrow"
+                style={{ color: trendMeta.color }}
+                title={trendMeta.label}
+              >
+                {trendMeta.arrow}
+              </span>
+            )}
             {ref.source === 'standard' && (
               <span className="labs-tab-prov" title="Normal band from a confirmed standard, not this lab's printed range">
                 standard band
@@ -253,11 +328,13 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
         yTicks={4}
         maxXTicks={5}
         formatY={(v) => String(Math.round(v * 100) / 100)}
-        bands={
-          ref.low !== null && ref.high !== null
+        bands={[
+          ...(ref.low !== null && ref.high !== null
             ? [{ from: ref.low, to: ref.high, color: 'var(--teal)', opacity: 0.1 }]
-            : []
-        }
+            : []),
+          ...extraBands,
+        ]}
+        divider={goalDivider}
         series={[
           {
             accessor: (d: TrendDay) => d.value,
@@ -279,6 +356,25 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
           return rows
         }}
       />
+      {target && (
+        <div className="labs-tab-goal-foot">
+          <span className="labs-tab-goal-label">Target: {target.label}</span>
+          {informational && (
+            <span className="labs-tab-goal-info" title="Non-modifiable risk marker — track for context, not a treatment goal.">
+              informational — not therapy-modifiable
+            </span>
+          )}
+          {target.reductionGoalPct && status?.reductionPct !== null && status?.baseline !== null && (
+            <span className="labs-tab-goal-reduction">
+              {(status.reductionPct ?? 0) >= 0
+                ? `↓ ${(status.reductionPct ?? 0).toFixed(0)}%`
+                : `↑ ${Math.abs(status.reductionPct ?? 0).toFixed(0)}%`}{' '}
+              from baseline {status.baseline}
+              {status.meetsReductionGoal ? ' · ≥50% goal met' : ' · ≥50% goal not yet met'}
+            </span>
+          )}
+        </div>
+      )}
     </Card>
   )
 }
@@ -299,6 +395,24 @@ export function LabsTab({ panels, trends }: Props) {
   const [pickedSlug, setPickedSlug] = useState<string>('')
   const picked = pickedSlug ? trendsBySlug.get(pickedSlug) ?? null : null
 
+  // "Cardiac labs vs target" summary — one glance answers "where do I stand."
+  // Counted across LAB_TARGETS slugs (cardiac-first set). Markers with no
+  // draws or with an unmatched unit count as `notDrawn` / not-evaluable so
+  // the totals are honest.
+  const targetSummary = useMemo(() => {
+    const summary = { atGoal: 0, near: 0, off: 0, notDrawn: 0 }
+    for (const slug of Object.keys(LAB_TARGETS)) {
+      const t = trendsBySlug.get(slug)
+      if (!t) { summary.notDrawn++; continue }
+      const status = evaluateLabMarker(t)
+      if (status.goalState === 'at-goal') summary.atGoal++
+      else if (status.goalState === 'near') summary.near++
+      else if (status.goalState === 'off-goal') summary.off++
+      else summary.notDrawn++
+    }
+    return summary
+  }, [trendsBySlug])
+
   return (
     <>
       <div className="section-divider tabhead">
@@ -308,13 +422,40 @@ export function LabsTab({ panels, trends }: Props) {
           </span>
           <h2 className="section-title">Lab markers &amp; trends</h2>
           <p className="section-sub">
-            Cardiac key markers (★) trended across every draw; imported panels listed
-            chronologically with out-of-range flagging. Import new reports via the{' '}
+            Cardiac key markers (★) trended across every draw with clinical-target tracking; imported
+            panels listed chronologically with out-of-range flagging. Import new reports via the{' '}
             <a href="/labs">labs upload tool</a> — they appear here once committed.
           </p>
         </div>
       </div>
       <main className="grid">
+        <Card className="col-12">
+          <PanelHeader
+            icon={<LineChart size={18} />}
+            title="Cardiac labs vs target"
+            accent="var(--teal)"
+          />
+          <div className="labs-tab-summary">
+            <div className="labs-tab-summary-stat">
+              <span className="labs-tab-summary-dot" style={{ background: GOAL_COLOR['at-goal'] }} />
+              <span className="labs-tab-summary-n">{targetSummary.atGoal}</span> at goal
+            </div>
+            <div className="labs-tab-summary-stat">
+              <span className="labs-tab-summary-dot" style={{ background: GOAL_COLOR['near'] }} />
+              <span className="labs-tab-summary-n">{targetSummary.near}</span> near
+            </div>
+            <div className="labs-tab-summary-stat">
+              <span className="labs-tab-summary-dot" style={{ background: GOAL_COLOR['off-goal'] }} />
+              <span className="labs-tab-summary-n">{targetSummary.off}</span> off
+            </div>
+            <div className="labs-tab-summary-stat labs-tab-summary-dim">
+              <span className="labs-tab-summary-dot" style={{ background: 'var(--text-dim)' }} />
+              <span className="labs-tab-summary-n">{targetSummary.notDrawn}</span> not drawn / not evaluable
+            </div>
+          </div>
+          <p className="labs-tab-summary-foot">{LAB_TARGET_PROVISIONAL_NOTE}</p>
+        </Card>
+
         <PanelsCard panels={panels} />
 
         {keyTrends.length === 0 ? (

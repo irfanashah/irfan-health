@@ -473,6 +473,15 @@ export interface MarkerTrendPoint {
   ref_source: 'reported' | 'standard' | null
   flag: 'H' | 'L' | 'HH' | 'LL' | 'N' | null
   unit: string
+  /**
+   * Whether `value` is in canonical or reported units.
+   * 'canonical' = converted via markers.ts::toCanonical (the default path).
+   * 'reported'  = no canonical conversion exists for this marker (Lp(a),
+   *               where mg/dL↔nmol/L is assay-dependent); value is the
+   *               raw numeric_value + unit is the reported unit.
+   *               Target evaluation must unit-match before comparing.
+   */
+  valueSource: 'canonical' | 'reported'
 }
 
 export interface MarkerTrend {
@@ -489,11 +498,16 @@ export interface MarkerTrend {
  */
 export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
   const supabase = createServiceClient()
+  // Pull both canonical_value AND numeric_value. The default path is the
+  // canonical value (every cardiac lipid except Lp(a)); for markers whose
+  // registry says canonicalUnit===null we fall back to the reported
+  // (numeric_value + unit) pair so they stop being silently dropped. This
+  // is the smallest fix for the Lp(a) case (mg/dL↔nmol/L is assay-
+  // dependent so we never auto-convert) without forking a second reader.
   const { data } = await supabase
     .from('lab_values')
-    .select('marker_slug, canonical_value, canonical_unit, unit, ref_low, ref_high, ref_source, flag, panel_id, lab_panels!inner(drawn_at, source_slug)')
+    .select('marker_slug, canonical_value, canonical_unit, numeric_value, unit, ref_low, ref_high, ref_source, flag, panel_id, lab_panels!inner(drawn_at, source_slug)')
     .not('marker_slug', 'eq', 'unmapped')
-    .not('canonical_value', 'is', null)
     .order('marker_slug', { ascending: true })
   if (!data) return []
 
@@ -503,6 +517,7 @@ export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
     marker_slug: string
     canonical_value: number | string | null
     canonical_unit: string | null
+    numeric_value: number | string | null
     unit: string | null
     ref_low: number | string | null
     ref_high: number | string | null
@@ -515,17 +530,43 @@ export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
   for (const raw of data as unknown as Row[]) {
     const panelMeta = Array.isArray(raw.lab_panels) ? raw.lab_panels[0] : raw.lab_panels
     if (!panelMeta || panelMeta.source_slug !== SOURCE_SLUG) continue
-    const v = typeof raw.canonical_value === 'string' ? Number(raw.canonical_value) : raw.canonical_value
-    if (v === null || !Number.isFinite(v)) continue
+
+    const canonical = typeof raw.canonical_value === 'string' ? Number(raw.canonical_value) : raw.canonical_value
+    const reported = typeof raw.numeric_value === 'string' ? Number(raw.numeric_value) : raw.numeric_value
+    const def = getMarker(raw.marker_slug)
+
+    let value: number | null = null
+    let unit = ''
+    let valueSource: MarkerTrendPoint['valueSource'] = 'canonical'
+
+    if (canonical !== null && Number.isFinite(canonical)) {
+      value = canonical
+      unit = raw.canonical_unit ?? raw.unit ?? ''
+      valueSource = 'canonical'
+    } else if (def && def.canonicalUnit === null && reported !== null && Number.isFinite(reported)) {
+      // Registered no-canonical marker (Lp(a)) → fall back to reported.
+      value = reported
+      unit = raw.unit ?? ''
+      valueSource = 'reported'
+    } else {
+      // Canonical missing + not a no-canonical marker (e.g. a registered
+      // marker whose conversion failed because the unit was unknown).
+      // Drop silently — the review UI surfaces the unit warning at commit
+      // time; we don't want to chart an un-converted value alongside
+      // canonical ones and pretend they're comparable.
+      continue
+    }
+
     const list = byMarker.get(raw.marker_slug) ?? []
     list.push({
       drawn_at: panelMeta.drawn_at,
-      value: v,
+      value,
       ref_low: typeof raw.ref_low === 'string' ? Number(raw.ref_low) : raw.ref_low,
       ref_high: typeof raw.ref_high === 'string' ? Number(raw.ref_high) : raw.ref_high,
       ref_source: raw.ref_source ?? null,
       flag: raw.flag,
-      unit: raw.canonical_unit ?? raw.unit ?? '',
+      unit,
+      valueSource,
     })
     byMarker.set(raw.marker_slug, list)
   }

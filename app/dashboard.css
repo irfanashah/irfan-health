@@ -427,6 +427,46 @@
   max-width: 280px;
 }
 
+/* Clinical-target tracking (cardiac labs vs goals — provisional) */
+.labs-tab-goal-pill {
+  display: inline-flex; align-items: center;
+  font-size: 10.5px; font-weight: 700; text-transform: lowercase; letter-spacing: 0.04em;
+  padding: 2px 7px; border-radius: 10px;
+  border: 1px solid currentColor; background: transparent;
+}
+.labs-tab-goal-unmatched { color: var(--text-dim); font-style: italic; }
+.labs-tab-goal-arrow { font-size: 14px; font-weight: 700; line-height: 1; cursor: help; }
+.labs-tab-goal-foot {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  margin-top: 8px; padding: 6px 10px;
+  background: var(--surface-2); border: 1px solid var(--card-border); border-radius: 6px;
+  font-size: 11px; color: var(--text-muted);
+}
+.labs-tab-goal-label { font-weight: 600; color: var(--text); }
+.labs-tab-goal-info {
+  font-style: italic; color: var(--text-dim);
+  padding: 1px 7px; border-radius: 10px; border: 1px dashed var(--card-border);
+}
+.labs-tab-goal-reduction { font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* Cardiac labs vs target — summary strip at the top of the Labs tab */
+.labs-tab-summary {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  padding: 8px 0 4px;
+  font-size: 13px;
+}
+.labs-tab-summary-stat { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.labs-tab-summary-dim { color: var(--text-muted); }
+.labs-tab-summary-dot {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+}
+.labs-tab-summary-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.labs-tab-summary-foot {
+  margin: 8px 0 0; padding-top: 6px;
+  border-top: 1px dashed var(--card-border);
+  font-size: 11px; color: var(--text-dim); font-style: italic; line-height: 1.5;
+}
+
 /* ---------- Baselines & Drift (Claude Design — third top-level tab) ---------- */
 /* Ported verbatim from outputs/decoded_dashboard.html. Re-rooted on .dark / .light
    for any media-query overrides that need theme variants; the base rules read CSS

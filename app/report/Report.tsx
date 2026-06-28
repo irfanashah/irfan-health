@@ -27,6 +27,7 @@ import {
   st,
 } from '@/components/dashboard/thresholds'
 import { getMarker, KEY_MARKER_SLUGS } from '@/app/labs/_lib/markers'
+import { LAB_TARGET_PROVISIONAL_NOTE, type LabGoalState, type LabTrendDir } from '@/app/labs/_lib/targets'
 import type {
   DailyMetricRow,
   CgmPoint,
@@ -92,6 +93,25 @@ function provenance(src: 'reported' | 'standard' | null): string {
   if (src === 'reported') return 'lab-printed'
   if (src === 'standard') return 'standard'
   return ''
+}
+
+const GOAL_COLOR: Record<LabGoalState, string> = {
+  'at-goal': 'var(--teal)',
+  'near': 'var(--amber)',
+  'off-goal': 'var(--red)',
+}
+
+const GOAL_LABEL: Record<LabGoalState, string> = {
+  'at-goal': 'at goal',
+  'near': 'near goal',
+  'off-goal': 'off goal',
+}
+
+function trendArrow(d: LabTrendDir): { arrow: string; color: string } {
+  if (d === 'improving') return { arrow: '↘', color: 'var(--teal)' }
+  if (d === 'worsening') return { arrow: '↗', color: 'var(--red)' }
+  if (d === 'flat') return { arrow: '→', color: 'var(--text-dim)' }
+  return { arrow: '', color: 'var(--text-dim)' }
 }
 
 // ─── Trend-series helpers ────────────────────────────────────────────────
@@ -256,37 +276,86 @@ export function Report(props: Props) {
           {cardiacLabs.length === 0 ? (
             <p className="report-empty">No cardiac key-marker labs imported yet.</p>
           ) : (
-            <table className="report-table">
-              <thead>
-                <tr>
-                  <th>Marker</th>
-                  <th>Value</th>
-                  <th>Reference</th>
-                  <th>Flag</th>
-                  <th>Δ vs prior</th>
-                  <th>Drawn</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cardiacLabs.map((r) => (
-                  <tr key={r.slug} className={r.flag && r.flag !== 'N' ? 'oor' : ''}>
-                    <td><strong>{r.display}</strong></td>
-                    <td className="num">{fmtNum(r.latest, 2)} <span className="unit">{r.unit}</span></td>
-                    <td className="num">
-                      {refRangeText({ ref_low: r.refLow, ref_high: r.refHigh, ref_unit: r.unit })}
-                      {r.refSource && <span className="report-prov"> · {provenance(r.refSource)}</span>}
-                    </td>
-                    <td>{r.flag ? <span className={`report-flag report-flag-${r.flag.toLowerCase()}`}>{r.flag}</span> : '—'}</td>
-                    <td className="num">
-                      {r.delta !== null
-                        ? `${directionLabel(r.direction)} ${Math.abs(r.delta).toFixed(2)}`
-                        : '—'}
-                    </td>
-                    <td>{fmtDateShort(r.drawnAt)}</td>
+            <>
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Marker</th>
+                    <th>Value</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Δ vs prior</th>
+                    <th>Drawn</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {cardiacLabs.map((r) => {
+                    const trend = trendArrow(r.goalTrend)
+                    const oor = r.flag && r.flag !== 'N'
+                    return (
+                      <tr key={r.slug} className={oor ? 'oor' : ''}>
+                        <td>
+                          <strong>{r.display}</strong>
+                          {!r.modifiable && <span className="report-tag" title="Non-modifiable risk marker — not a treatment target">info</span>}
+                        </td>
+                        <td className="num">
+                          {fmtNum(r.latest, 2)} <span className="unit">{r.unit}</span>
+                          {r.flag && r.flag !== 'N' && (
+                            <span className={`report-flag report-flag-${r.flag.toLowerCase()}`} style={{ marginLeft: 4 }}>
+                              {r.flag}
+                            </span>
+                          )}
+                          {r.slug === 'ldl' && r.reductionPct !== null && r.baseline !== null && (
+                            <div className="report-ldl-reduction">
+                              ↓ {r.reductionPct >= 0 ? r.reductionPct.toFixed(0) : `+${Math.abs(r.reductionPct).toFixed(0)}`}% from baseline {fmtNum(r.baseline, 2)}
+                              {r.meetsReductionGoal ? ' · ≥50% goal met' : ' · ≥50% goal not yet met'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="num">
+                          {r.target ? (
+                            <span title={r.target.label}>{r.target.label.split(' · ')[0]}</span>
+                          ) : (
+                            <>
+                              {refRangeText({ ref_low: r.refLow, ref_high: r.refHigh, ref_unit: r.unit })}
+                              {r.refSource && <span className="report-prov"> · {provenance(r.refSource)}</span>}
+                            </>
+                          )}
+                        </td>
+                        <td>
+                          {r.goalState ? (
+                            <span
+                              className="report-goal-pill"
+                              style={{ color: GOAL_COLOR[r.goalState], borderColor: GOAL_COLOR[r.goalState] }}
+                            >
+                              {GOAL_LABEL[r.goalState]}
+                            </span>
+                          ) : r.unmatchedReason ? (
+                            <span className="report-empty" title={r.unmatchedReason}>unit not matched</span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="num">
+                          {r.delta !== null ? (
+                            <>
+                              {`${directionLabel(r.direction)} ${Math.abs(r.delta).toFixed(2)}`}
+                              {trend.arrow && (
+                                <span style={{ color: trend.color, marginLeft: 4 }} title={r.goalTrend ?? ''}>
+                                  {trend.arrow}
+                                </span>
+                              )}
+                            </>
+                          ) : '—'}
+                        </td>
+                        <td>{fmtDateShort(r.drawnAt)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <p className="report-footnote-inline">{LAB_TARGET_PROVISIONAL_NOTE}</p>
+            </>
           )}
         </section>
 

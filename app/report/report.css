@@ -144,6 +144,20 @@
 .report-flag-hh, .report-flag-ll { color: #b91c1c; }
 .report-flag-n { color: #15803d; }
 
+/* ── Clinical-target pills + LDL reduction line ───────────────── */
+.report-goal-pill {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor;
+  text-transform: lowercase; letter-spacing: 0.02em;
+}
+.report-ldl-reduction {
+  font-size: 10.5px; color: #555; font-weight: 500; margin-top: 3px;
+}
+.report-footnote-inline {
+  margin-top: 8px; padding-top: 6px; border-top: 1px dashed #ddd;
+  font-size: 10px; color: #777; font-style: italic; line-height: 1.5;
+}
+
 /* ── Drift list (page 1) + drift detail page ───────────────────── */
 .report-drift-list { margin: 0; padding-left: 16px; list-style: disc; }
 .report-drift-list li { padding: 2px 0; line-height: 1.4; }
