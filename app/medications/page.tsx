@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { fetchMedications } from './actions'
+import { fetchMedications, fetchAdherence } from './actions'
 import { MedicationsClient } from './MedicationsClient'
 import './medications.css'
 
@@ -10,7 +10,10 @@ export default async function MedicationsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const meds = await fetchMedications()
+  // 30-day window for the medications-page heat-strip. Independent of
+  // the dashboard panel's read — both call fetchAdherence with the
+  // window they actually render.
+  const [meds, adherence] = await Promise.all([fetchMedications(), fetchAdherence(30)])
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,7 +34,7 @@ export default async function MedicationsPage() {
           Doctor report →
         </Link>
       </header>
-      <MedicationsClient meds={meds} />
+      <MedicationsClient meds={meds} adherence={adherence} />
     </div>
   )
 }

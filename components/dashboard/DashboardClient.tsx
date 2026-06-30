@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Info } from 'lucide-react'
 import { Header, type TabId } from './Header'
 import { TodayAtAGlance } from './panels/TodayAtAGlance'
+import { MedAdherencePanel } from './panels/MedAdherencePanel'
 import { CardiacPanel } from './panels/CardiacPanel'
 import { GlucosePanel } from './panels/GlucosePanel'
 import { RecoverySleepPanel } from './panels/RecoverySleepPanel'
@@ -24,6 +25,7 @@ import type {
 } from '@/app/lib/dashboard/daily-metrics'
 import type { LabPanelRow, MarkerTrend } from '@/app/labs/actions'
 import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
+import type { AdherenceSummary } from '@/app/medications/actions'
 import type { RecentEntry } from '@/app/log/_lib/types'
 import { carryForwardWeightForTrend } from './utils'
 
@@ -37,11 +39,12 @@ interface Props {
   fingersticks: FingerstickPoint[]
   labPanels: LabPanelRow[]
   labTrends: MarkerTrend[]
+  adherence: AdherenceSummary
 }
 
 export function DashboardClient({
   series, cgm24h, latest, recent, baselines, spo2Night, fingersticks,
-  labPanels, labTrends,
+  labPanels, labTrends, adherence,
 }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
@@ -57,6 +60,7 @@ export function DashboardClient({
       {tab === 'dashboard' && (
         <main className="grid">
           <TodayAtAGlance series={sliced} latest={latest} glucoseUnit={unit} rangeDays={range} fingersticks={fingersticks} />
+          <MedAdherencePanel adherence={adherence} />
           <CardiacPanel series={sliced} latest={latest} />
           <GlucosePanel cgm24h={cgm24h} latest={latest} unit={unit} onUnitChange={setUnit} fingersticks={fingersticks} />
           <RecoverySleepPanel series={sliced} latest={latest} rangeDays={range} />

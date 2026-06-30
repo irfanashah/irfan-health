@@ -80,7 +80,84 @@
   background: var(--background); color: var(--foreground);
 }
 
+/* ── Adherence history section (above the meds list) ─────────── */
+.meds-adh-self-reported {
+  margin-left: auto; font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted-foreground); padding: 2px 7px;
+  border-radius: 10px; border: 1px dashed var(--border); font-style: italic;
+}
+.meds-adh-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  margin-bottom: 14px;
+}
+.meds-adh-stat {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  border: 1px solid var(--border);
+}
+.meds-adh-stat-n {
+  font-size: 22px; font-weight: 800; color: var(--foreground);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.meds-adh-stat-l {
+  font-size: 11px; font-weight: 600; color: var(--muted-foreground);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.meds-adh-stat-sub { font-size: 11.5px; color: var(--muted-foreground); }
+
+.meds-adh-strip {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px;
+  padding: 4px 0;
+}
+.meds-adh-cell {
+  height: 18px; border-radius: 3px; display: inline-block;
+  border: 1px solid transparent;
+}
+.meds-adh-cell-taken {
+  background: color-mix(in srgb, var(--primary) 75%, transparent);
+}
+.meds-adh-cell-skipped {
+  background: color-mix(in srgb, var(--destructive) 70%, transparent);
+}
+.meds-adh-cell-unknown {
+  background: transparent; border-color: var(--border);
+}
+.meds-adh-strip-legend {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  font-size: 11px; color: var(--muted-foreground);
+  margin-top: 6px; align-items: center;
+}
+.meds-adh-strip-legend > span {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.meds-adh-strip-legend .meds-adh-cell { width: 12px; height: 12px; }
+.meds-adh-strip-range { margin-left: auto; font-style: italic; }
+
+.meds-adh-action {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 14px; align-items: center;
+}
+.meds-adh-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; font-weight: 600; color: var(--primary);
+  padding: 6px 10px; border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.meds-adh-state-skipped {
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+}
+.meds-adh-skip-input {
+  flex: 1 1 200px; min-width: 0;
+  padding: 6px 8px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--background); color: var(--foreground);
+}
+
 @media (max-width: 700px) {
   .meds-form { grid-template-columns: 1fr 1fr; }
   .meds-edit-row { grid-template-columns: 1fr 1fr; }
+  .meds-adh-stats { grid-template-columns: 1fr; }
 }

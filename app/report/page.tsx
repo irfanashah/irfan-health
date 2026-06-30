@@ -9,7 +9,7 @@ import {
 } from '@/app/lib/dashboard/daily-metrics'
 import { fetchBaselinesPayload } from '@/app/lib/dashboard/baselines'
 import { fetchAllPanels, fetchAllMarkerTrends } from '@/app/labs/actions'
-import { fetchActiveMedications } from '@/app/medications/actions'
+import { fetchActiveMedications, fetchAdherence } from '@/app/medications/actions'
 import { Report } from './Report'
 import '../dashboard.css'
 import './report.css'
@@ -44,6 +44,7 @@ export default async function ReportPage() {
     labPanels,
     labTrends,
     medications,
+    adherence,
   ] = await Promise.all([
     fetchDailyMetrics(VITALS_DAYS),
     fetchCgm24h(),
@@ -53,6 +54,7 @@ export default async function ReportPage() {
     fetchAllPanels(),
     fetchAllMarkerTrends(),
     fetchActiveMedications(),
+    fetchAdherence(VITALS_DAYS),
   ])
   const latest = await fetchLatestKpis(cgm24h)
 
@@ -74,6 +76,7 @@ export default async function ReportPage() {
         labPanels={labPanels}
         labTrends={labTrends}
         medications={medications}
+        adherence={adherence}
         baselines={baselines}
       />
     </div>

@@ -78,6 +78,15 @@
 .report-meds-freq { color: #555; }
 .report-meds-notes { color: #777; font-style: italic; font-size: 11.5px; }
 
+/* Self-reported adherence line under the meds list. Plain prose, no
+   colour — this is patient-tapped data; honesty rather than alarm. */
+.report-adherence {
+  margin: 10px 0 0; padding: 8px 10px;
+  background: #fafafa; border-left: 3px solid #ddd; border-radius: 4px;
+  font-size: 11.5px; color: #333; line-height: 1.55;
+}
+.report-adherence-caveat { color: #777; font-style: italic; }
+
 /* ── Tile layout (BP, HR/HRV, O2, drift cards) ─────────────────── */
 .report-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;

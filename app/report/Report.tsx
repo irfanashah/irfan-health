@@ -36,7 +36,7 @@ import type {
   FingerstickPoint,
 } from '@/app/lib/dashboard/daily-metrics'
 import type { LabPanelRow, LabValueRow, MarkerTrend } from '@/app/labs/actions'
-import type { MedicationRow } from '@/app/medications/actions'
+import type { MedicationRow, AdherenceSummary } from '@/app/medications/actions'
 import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
 import { DRIFT_METRICS } from '@/components/dashboard/drift-config'
 import { evaluateMetric } from '@/components/dashboard/drift/evaluate'
@@ -62,6 +62,7 @@ interface Props {
   labPanels: LabPanelRow[]
   labTrends: MarkerTrend[]
   medications: MedicationRow[]
+  adherence: AdherenceSummary
   baselines: BaselinesPayload
 }
 
@@ -135,7 +136,7 @@ function rhrHrvYDomain(rows: DailyMetricRow[]): [number, number] | undefined {
 export function Report(props: Props) {
   const {
     windowDays, generatedAt, series, cgm24h, latest, spo2Night, fingersticks,
-    labPanels, labTrends, medications, baselines,
+    labPanels, labTrends, medications, adherence, baselines,
   } = props
 
   // Build the drift panel client-side (mirrors BaselinesDriftPanel).
@@ -222,6 +223,30 @@ export function Report(props: Props) {
               ))}
             </ul>
           )}
+          {/* Self-reported adherence line. Two separate numbers — never
+              collapses unknown days into a manufactured low %. Graceful
+              zero-state when there's no record yet. */}
+          <p className="report-adherence">
+            <strong>Self-reported adherence:</strong>{' '}
+            {!adherence.hasAnyRecord ? (
+              <span>Tracking not yet started.</span>
+            ) : (
+              <>
+                {adherence.adherencePctOfLogged !== null
+                  ? `${adherence.adherencePctOfLogged.toFixed(0)}% of logged days taken`
+                  : '—'}
+                {' · '}
+                logged {adherence.loggedCount} of {adherence.expectedDays ?? '—'} days
+                {' over the last '}
+                {adherence.windowDays} days
+                {adherence.streak > 0 && (
+                  <> · current streak {adherence.streak} day{adherence.streak === 1 ? '' : 's'}</>
+                )}
+                {adherence.skippedCount > 0 && <> · {adherence.skippedCount} skipped</>}
+                . <span className="report-adherence-caveat">Patient-tapped daily confirm; unrecorded days are not counted as missed.</span>
+              </>
+            )}
+          </p>
         </section>
 
         {/* BP + HR/HRV side by side */}
