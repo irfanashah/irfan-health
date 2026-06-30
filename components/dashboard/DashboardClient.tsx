@@ -27,10 +27,11 @@ import type { LabPanelRow, MarkerTrend } from '@/app/labs/actions'
 import type { BaselinesPayload } from '@/app/lib/dashboard/baselines'
 import type { AdherenceSummary } from '@/app/medications/actions'
 import type { RecentEntry } from '@/app/log/_lib/types'
+import type { DateRange } from './connections/engine'
 import { carryForwardWeightForTrend } from './utils'
 
 interface Props {
-  series: DailyMetricRow[]      // up to 90 days, oldest first; weight column raw (not yet carry-forwarded)
+  series: DailyMetricRow[]      // 365 days, oldest first; weight column raw
   cgm24h: CgmPoint[]
   latest: LatestKpis
   recent: RecentEntry[]
@@ -40,11 +41,15 @@ interface Props {
   labPanels: LabPanelRow[]
   labTrends: MarkerTrend[]
   adherence: AdherenceSummary
+  /** Med-change + context_periods exclusions for the Connections engine. */
+  engineExclusions: DateRange[]
+  /** Whether the optional LLM confounder expand is wired. */
+  llmConfoundersAvailable: boolean
 }
 
 export function DashboardClient({
   series, cgm24h, latest, recent, baselines, spo2Night, fingersticks,
-  labPanels, labTrends, adherence,
+  labPanels, labTrends, adherence, engineExclusions, llmConfoundersAvailable,
 }: Props) {
   const [range, setRange] = useState<RangeId>(30)
   const [unit, setUnit] = useState<'mmol/L' | 'mg/dL'>('mmol/L')
@@ -72,10 +77,13 @@ export function DashboardClient({
       )}
       {tab === 'correlations' && (
         <ConnectionsTab
-          series={sliced}
+          seriesEngine={series}
+          seriesSliced={sliced}
+          exclusions={engineExclusions}
           cgm24h={cgm24h}
           recent={recent}
           glucoseUnit={unit}
+          llmAvailable={llmConfoundersAvailable}
         />
       )}
       {tab === 'baselines' && <BaselinesTab baselines={baselines} />}
