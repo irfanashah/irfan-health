@@ -25,6 +25,11 @@ export async function saveTokens(
   sourceSlug: string,
   tokens: OAuthTokens
 ): Promise<void> {
+  // The primary key (source_slug) resolves the conflict; no .eq() needed
+  // here. The old .eq() was a misleading no-op — upsert + eq() reads as
+  // "conditionally upsert" but PostgREST applies the eq() as a filter on
+  // the upsert payload, which always matches by construction. Dropping it
+  // for clarity (#15 in the code-review cleanups).
   const { error } = await supabase
     .from('oauth_tokens')
     .upsert({
@@ -34,7 +39,6 @@ export async function saveTokens(
       expires_at: tokens.expiresAt.toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('source_slug', sourceSlug)
 
   if (error) {
     throw new Error(`Failed to save tokens for ${sourceSlug}: ${error.message}`)

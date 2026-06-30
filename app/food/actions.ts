@@ -23,8 +23,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
+import { gstTodayISO } from '@/lib/gst'
 import { estimateMeal } from './_lib/estimate'
 import type { MealDraft, MealEstimateResult, MealItem, MealRow } from './_lib/types'
+
+/** GST calendar-day key for a UTC ISO timestamp. Same `+4h, slice(0,10)`
+ *  trick as `gstTodayISO`, applied to an arbitrary instant. */
+function gstDateOf(iso: string): string {
+  return new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 10)
+}
 
 async function requireSession() {
   const supabase = await createClient()
@@ -204,6 +211,7 @@ export async function deleteMeal(id: string): Promise<CommitMealResult> {
 
 /** Diary list — newest first. */
 export async function fetchMeals(daysBack: number = 7): Promise<MealRow[]> {
+  await requireSession()
   const service = createServiceClient()
   const cutoff = new Date(Date.now() - daysBack * 86400000).toISOString()
   const { data, error } = await service
@@ -217,6 +225,7 @@ export async function fetchMeals(daysBack: number = 7): Promise<MealRow[]> {
 
 /** Today's meals (GST), for the glucose-trace markers. */
 export async function fetchTodayMeals(): Promise<MealRow[]> {
+  await requireSession()
   const service = createServiceClient()
   // Pull yesterday-onwards UTC so the GST calendar day is fully covered
   // regardless of when the user opens the dashboard.
@@ -229,13 +238,8 @@ export async function fetchTodayMeals(): Promise<MealRow[]> {
   if (error) throw new Error(`meals fetch failed: ${error.message}`)
   const all = (data ?? []).map((r) => rowFromRaw(r as Record<string, unknown>))
   // GST day filter — keep only meals whose GST calendar date matches today's.
+  // gstTodayISO lives in lib/gst.ts so cron + actions share one definition
+  // (gotcha #121).
   const today = gstTodayISO()
-  return all.filter((m) => gstDate(m.eaten_at) === today)
-}
-
-function gstTodayISO(): string {
-  return new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10)
-}
-function gstDate(iso: string): string {
-  return new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 10)
+  return all.filter((m) => gstDateOf(m.eaten_at) === today)
 }

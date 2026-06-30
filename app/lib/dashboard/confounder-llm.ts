@@ -26,7 +26,19 @@
 //   - concise (≤ 6 bullet items, ≤ 14 words each).
 
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@/lib/supabase/server'
 import { METRIC_INDEX, ENGINE_METRIC_IDS } from '@/components/dashboard/connections/metrics'
+
+// Guard against unauthenticated callers — every export in a 'use server'
+// file is an independently-callable RPC. The LLM expand carries no PHI
+// (just metric ids + lag) but an unguarded RPC would let an attacker
+// rack up Anthropic spend.
+async function requireSession() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorised')
+  return user
+}
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -57,6 +69,7 @@ export async function fetchLlmConfounders(
   yId: string,
   lag: number,
 ): Promise<LlmConfounderResult> {
+  await requireSession()
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return { available: false }
 

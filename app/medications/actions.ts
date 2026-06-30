@@ -39,6 +39,11 @@ export interface MedActionResult {
 }
 
 export async function fetchMedications(): Promise<MedicationRow[]> {
+  // Guard against unauthenticated callers — every export in a 'use server'
+  // file is an independently-callable RPC, not just the mutators (gotcha
+  // added in the code-review remediation pass). Behaviour-neutral for
+  // authenticated reads from auth-guarded server components.
+  await requireSession()
   const service = createServiceClient()
   const { data, error } = await service
     .from('medications')
@@ -50,6 +55,7 @@ export async function fetchMedications(): Promise<MedicationRow[]> {
 }
 
 export async function fetchActiveMedications(): Promise<MedicationRow[]> {
+  await requireSession()
   const service = createServiceClient()
   const { data, error } = await service
     .from('medications')
@@ -259,6 +265,7 @@ export async function clearToday(): Promise<MedActionResult> {
  * everywhere — they read as 'unknown'.
  */
 export async function fetchAdherence(windowDays: number = 90): Promise<AdherenceSummary> {
+  await requireSession()
   const service = createServiceClient()
   const today = gstTodayISO()
   const days = gstDaysBack(windowDays).reverse() // oldest → newest

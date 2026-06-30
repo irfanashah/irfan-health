@@ -309,9 +309,17 @@ spo2_daily AS (
 --      night's sleep onset. Null when either is missing.
 -- ----------------------------------------------------------------
 whoop_sleep_onset AS (
-  -- Sleep onset (period_start) keyed by wake_day. wake_day = GST date
-  -- the user woke. Reused from whoop_wake's logic + carries the onset.
-  SELECT
+  -- Sleep onset (period_start) keyed by wake_day.
+  --
+  -- DISTINCT ON (wake_day): a split-sleep / nap-as-main night can
+  -- yield two rows sharing wake_day. Without the dedup, the LEFT JOIN
+  -- in meals_enriched (`s.wake_day = eaten_day + 1`) duplicates every
+  -- meal row, inflating meals_daily's SUM(carbs_g) etc. by a factor of
+  -- two. Same split-sleep guard the whoop_wake CTE comment describes
+  -- (cycle without main sleep, two cycles waking same day).
+  -- ORDER BY wake_day, period_start picks the EARLIEST onset on a
+  -- duplicate wake_day — the "real bedtime" rather than a 4am nap.
+  SELECT DISTINCT ON ((period_end AT TIME ZONE 'Asia/Dubai')::date)
     (period_end AT TIME ZONE 'Asia/Dubai')::date AS wake_day,
     period_start AS sleep_onset
   FROM health_observations
@@ -319,6 +327,7 @@ whoop_sleep_onset AS (
     AND metric_type = 'sleep_duration_total'
     AND period_start IS NOT NULL
     AND period_end IS NOT NULL
+  ORDER BY (period_end AT TIME ZONE 'Asia/Dubai')::date, period_start
 ),
 meals_enriched AS (
   -- For each meal: GST eaten-day + the upcoming night's sleep onset
@@ -351,11 +360,26 @@ meals_daily AS (
     SUM(sodium_mg) AS sodium_mg,
     SUM(calories)  AS calories,
     SUM(carbs_g) FILTER (WHERE is_evening) AS evening_carbs_g,
-    -- min(sleep_onset - eaten_at), in minutes. MAX(eaten_at) is the
-    -- day's last meal; MAX(sleep_onset) is the upcoming night's onset
-    -- (it's constant within the group — same wake_day = eaten_day+1).
-    EXTRACT(EPOCH FROM (MAX(sleep_onset) - MAX(eaten_at))) / 60.0
-      AS last_meal_to_sleep_min
+    -- Minutes between the day's last PRE-SLEEP meal and the upcoming
+    -- night's sleep onset.
+    --
+    -- "Last meal" is constrained to `eaten_at <= sleep_onset` — without
+    -- the filter, a late/2am snack logged after sleep_onset (post-
+    -- midnight bottle for the newborn, say) would make MAX(eaten_at) >
+    -- sleep_onset and the difference negative. A negative value
+    -- reaching the correlation engine as a covariate would be silently
+    -- wrong (the engine would treat -120 as a real metric reading).
+    --
+    -- GREATEST(0, …) belt-and-braces — if a future edge case still
+    -- slips a negative through (e.g. a single meal eaten exactly at the
+    -- onset boundary with timezone rounding), clamp at zero. Null when
+    -- either side missing remains null.
+    GREATEST(
+      0,
+      EXTRACT(EPOCH FROM (
+        MAX(sleep_onset) - MAX(eaten_at) FILTER (WHERE eaten_at <= sleep_onset)
+      )) / 60.0
+    ) AS last_meal_to_sleep_min
   FROM meals_enriched
   GROUP BY eaten_day
 )

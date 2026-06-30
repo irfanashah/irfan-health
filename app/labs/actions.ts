@@ -426,6 +426,7 @@ export interface LabValueRow {
 
 /** All panels chronologically (newest first) with their values inline. */
 export async function fetchAllPanels(): Promise<LabPanelRow[]> {
+  await requireSession()
   const supabase = createServiceClient()
   const { data: panels } = await supabase
     .from('lab_panels')
@@ -497,6 +498,7 @@ export interface MarkerTrend {
  * The /labs page filters this list for key markers + the picker dropdown.
  */
 export async function fetchAllMarkerTrends(): Promise<MarkerTrend[]> {
+  await requireSession()
   const supabase = createServiceClient()
   // Pull both canonical_value AND numeric_value. The default path is the
   // canonical value (every cardiac lipid except Lp(a)); for markers whose

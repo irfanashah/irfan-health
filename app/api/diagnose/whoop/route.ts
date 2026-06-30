@@ -73,7 +73,14 @@ const RECOVERY_METRICS = [
   'recovery_score',
   'hrv_rmssd',
   'heart_rate_resting',
-  'spo2_overnight_avg',
+  // The Whoop adapter writes SpO2 as 'spo2_whoop' (renamed from
+  // 'spo2_overnight_avg' in migration_007 to disambiguate from Oxylink's
+  // overnight measurement; gotcha #77). Without this rename Diagnose
+  // reports a permanent false gap.
+  'spo2_whoop',
+  // skin_temp landed in the same Whoop slice — adapter writes it; needs
+  // to be in expected-vs-actual for the gap calculation to match reality.
+  'skin_temp',
 ] as const
 
 const SLEEP_METRICS = [
