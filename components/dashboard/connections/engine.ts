@@ -87,6 +87,16 @@ export const DERIVED_PAIRS: ReadonlySet<string> = new Set([
   pairKey('tir', 'glucose_var'),
   pairKey('sys', 'dia'),
   pairKey('strain', 'pulse'), // strain is partly derived from HR
+  // Food diary — totals + sub-macros all come from the same meal log,
+  // so any in-family link is "by construction more carbs → more sugar /
+  // more calories" not a discovery. Evening carbs ↔ total carbs is the
+  // textbook tautology to keep out of the discovery surface.
+  pairKey('carbs_g', 'sugar_g'),
+  pairKey('carbs_g', 'calories'),
+  pairKey('carbs_g', 'fiber_g'),
+  pairKey('carbs_g', 'evening_carbs_g'),
+  pairKey('sugar_g', 'calories'),
+  pairKey('sugar_g', 'evening_carbs_g'),
 ])
 
 export function pairKey(a: string, b: string): string {

@@ -49,9 +49,13 @@ export interface ConfounderEntry {
 export const CONFOUNDERS: Record<string, ConfounderEntry> = {
   fasting: {
     general: [
-      { label: 'Evening meal (carb load, timing)', kind: 'unmeasured', logHref: '/log', logHint: 'meal logging — backlog' },
+      // Evening meal — was unmeasured; flipped to measured-adjustable once
+      // the food diary slice landed (carbs_g + evening_carbs_g track it).
+      { label: 'Evening meal carbs', kind: 'measured', covariate: 'evening_carbs_g' },
+      { label: 'Total day carbs', kind: 'measured', covariate: 'carbs_g' },
+      { label: 'Sugar load', kind: 'measured', covariate: 'sugar_g' },
       { label: 'Alcohol with dinner', kind: 'unmeasured', logHref: '/log', logHint: 'log as a note' },
-      { label: 'Late snacking', kind: 'unmeasured', logHref: '/log', logHint: 'meal logging — backlog' },
+      { label: 'Late snacking', kind: 'measured', covariate: 'last_meal_to_sleep_min' },
       { label: 'Illness / inflammation', kind: 'unmeasured', logHref: '/log', logHint: 'log as a symptom' },
       { label: 'Dawn phenomenon (circadian cortisol)', kind: 'unmeasured' },
       { label: 'Medication timing (statin / beta-blocker dose hour)', kind: 'unmeasured', logHref: '/medications', logHint: 'frequency field' },
@@ -60,7 +64,9 @@ export const CONFOUNDERS: Record<string, ConfounderEntry> = {
   },
   glucose_var: {
     general: [
-      { label: 'Meal composition + timing across the day', kind: 'unmeasured', logHref: '/log', logHint: 'meal logging — backlog' },
+      { label: 'Meal composition + timing across the day', kind: 'measured', covariate: 'carbs_g' },
+      { label: 'Sugar load', kind: 'measured', covariate: 'sugar_g' },
+      { label: 'Evening carbs (close to bed)', kind: 'measured', covariate: 'evening_carbs_g' },
       { label: 'Alcohol', kind: 'unmeasured', logHref: '/log', logHint: 'log as a note' },
       { label: 'Illness', kind: 'unmeasured', logHref: '/log', logHint: 'log as a symptom' },
       { label: 'Strain spikes', kind: 'measured', covariate: 'strain' },
@@ -68,7 +74,9 @@ export const CONFOUNDERS: Record<string, ConfounderEntry> = {
   },
   tir: {
     general: [
-      { label: 'Meal composition + timing', kind: 'unmeasured', logHref: '/log', logHint: 'meal logging — backlog' },
+      { label: 'Meal composition + timing', kind: 'measured', covariate: 'carbs_g' },
+      { label: 'Sugar load', kind: 'measured', covariate: 'sugar_g' },
+      { label: 'Evening carbs', kind: 'measured', covariate: 'evening_carbs_g' },
       { label: 'Alcohol', kind: 'unmeasured' },
       { label: 'Illness', kind: 'unmeasured', logHref: '/log' },
       { label: 'Strain (next-day insulin sensitivity)', kind: 'measured', covariate: 'strain' },
@@ -76,7 +84,7 @@ export const CONFOUNDERS: Record<string, ConfounderEntry> = {
   },
   sys: {
     general: [
-      { label: 'Salt / dietary sodium', kind: 'unmeasured' },
+      { label: 'Salt / dietary sodium', kind: 'measured', covariate: 'sodium_mg' },
       { label: 'Caffeine intake + timing', kind: 'unmeasured', logHref: '/log', logHint: 'log as a note' },
       { label: 'Alcohol the prior evening', kind: 'unmeasured' },
       { label: 'Acute stress', kind: 'unmeasured' },
@@ -86,7 +94,7 @@ export const CONFOUNDERS: Record<string, ConfounderEntry> = {
   },
   dia: {
     general: [
-      { label: 'Salt / dietary sodium', kind: 'unmeasured' },
+      { label: 'Salt / dietary sodium', kind: 'measured', covariate: 'sodium_mg' },
       { label: 'Caffeine intake', kind: 'unmeasured', logHref: '/log' },
       { label: 'Alcohol the prior evening', kind: 'unmeasured' },
       { label: 'Acute stress', kind: 'unmeasured' },
@@ -133,14 +141,17 @@ export const CONFOUNDERS: Record<string, ConfounderEntry> = {
       { label: 'Caffeine after midday', kind: 'unmeasured' },
       { label: 'Alcohol', kind: 'unmeasured' },
       { label: 'Screen time before bed', kind: 'unmeasured' },
-      { label: 'Late meals', kind: 'unmeasured', logHref: '/log', logHint: 'meal logging — backlog' },
+      { label: 'Late meals', kind: 'measured', covariate: 'last_meal_to_sleep_min' },
+      { label: 'Heavy evening carbs', kind: 'measured', covariate: 'evening_carbs_g' },
       { label: 'Acute stress / work load', kind: 'unmeasured' },
       { label: 'Newborn night-wakings (Haya)', kind: 'unmeasured', logHint: 'household context — flag, not a fix' },
     ],
   },
   sleepQuality: {
     general: [
-      { label: 'Same caffeine / alcohol / late-meal pattern as sleep duration', kind: 'unmeasured' },
+      { label: 'Caffeine / alcohol the prior evening', kind: 'unmeasured' },
+      { label: 'Late meals (close to bedtime)', kind: 'measured', covariate: 'last_meal_to_sleep_min' },
+      { label: 'Heavy evening carbs', kind: 'measured', covariate: 'evening_carbs_g' },
       { label: 'Newborn night-wakings (Haya)', kind: 'unmeasured' },
       { label: 'Room temperature', kind: 'unmeasured' },
       { label: 'Stress', kind: 'unmeasured' },

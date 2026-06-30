@@ -8,6 +8,15 @@ import { Donut } from '../charts/Donut'
 import { GLUCOSE_HI, GLUCOSE_LO, MMOL_TO_MGDL, STATUS_COLOR, st } from '../thresholds'
 import type { CgmPoint, LatestKpis, FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
 
+/** Slim meal-marker shape — what the page passes from `meals` rows. */
+export interface MealMarkerInput {
+  id: string
+  time: Date
+  description: string
+  carbs?: number | null
+  mealLabel?: string | null
+}
+
 interface Props {
   cgm24h: CgmPoint[]
   latest: LatestKpis
@@ -17,6 +26,8 @@ interface Props {
   /**   - last 24 h → CGM overlay markers (existing behaviour when CGM is live) */
   /**   - head + top-10 → fallback "now" + recent-readings list when CGM is stale */
   fingersticks?: FingerstickPoint[]
+  /** Today's meals — render as 'meal' markers on the CGM trace. */
+  meals?: MealMarkerInput[]
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -57,7 +68,7 @@ function fmtListTime(time: Date): string {
     time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks = [] }: Props) {
+export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks = [], meals = [] }: Props) {
   const toG = (mmol: number) => (unit === 'mmol/L' ? +mmol.toFixed(1) : Math.round(mmol * MMOL_TO_MGDL))
 
   // ─── Fingerstick slices ────────────────────────────────────────────────
@@ -85,6 +96,20 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       value: fs.mmol,
     }
   })
+
+  // Meal markers — only meals within the 24h CGM window. Carbs sizes
+  // the glyph; the description is the tooltip detail. Honesty: macros
+  // are LLM estimates (gotcha — labelled in the tooltip via "≈").
+  const mealMarkers: CgmMarker[] = meals
+    .filter((m) => m.time.getTime() >= since24h)
+    .map((m) => ({
+      id: `meal-${m.id}`,
+      time: m.time,
+      kind: 'meal',
+      label: m.mealLabel ? m.mealLabel.charAt(0).toUpperCase() + m.mealLabel.slice(1) : 'Meal',
+      detail: m.description.length > 60 ? m.description.slice(0, 57) + '…' : m.description,
+      carbs: m.carbs ?? 0,
+    }))
 
   // ─── TIR (CGM-only, computed from the same 24h the chart shows) ────────
   const counts = { below: 0, inRange: 0, above: 0 }
@@ -204,7 +229,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
             unit={unit}
             toDisplay={toG}
             height={216}
-            markers={fingerstickMarkers}
+            markers={[...fingerstickMarkers, ...mealMarkers]}
           />
         </>
       ) : recentFingerstickList.length > 0 ? (

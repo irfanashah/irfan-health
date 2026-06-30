@@ -25,10 +25,12 @@ export interface CgmMarker {
   time: Date
   label: string
   detail?: string
-  kind: 'symptom' | 'note' | 'fingerstick'
+  kind: 'symptom' | 'note' | 'fingerstick' | 'meal'
   redFlag?: boolean
   /** mmol/L — required when kind==='fingerstick' so the marker plots at the meter's own value. */
   value?: number
+  /** Carbs for kind='meal' — sizes the marker glyph + shows in tooltip. */
+  carbs?: number
 }
 
 interface Props {
@@ -204,6 +206,39 @@ export function CGMChart({
               </g>
             )
           }
+          if (mm.kind === 'meal') {
+            // Meal markers: amber circle at the TOP of the chart (time-
+            // anchored, like symptoms/notes — meals are events). Radius
+            // scales with carb load (~ sqrt(carbs/40)) so a heavy meal
+            // visibly stands out; a 'C' label sits inside. Snap-dot on
+            // the CGM curve at the meal time so the post-meal trajectory
+            // is easy to track.
+            const carbs = mm.carbs ?? 0
+            const baseR = active ? 11 : 9
+            const scale = Math.max(0.7, Math.min(1.6, Math.sqrt(Math.max(carbs, 0) / 40)))
+            const r = baseR * scale
+            return (
+              <g
+                key={mm.id}
+                onMouseEnter={() => setHoverMk(i)}
+                onMouseLeave={() => setHoverMk(null)}
+                style={{ cursor: 'default' }}
+              >
+                <line
+                  x1={mm.x} y1={m.top} x2={mm.x} y2={m.top + ih}
+                  stroke="var(--amber)" strokeWidth={1} strokeDasharray="3 3"
+                  opacity={active ? 0.7 : 0.3}
+                />
+                <circle cx={mm.x} cy={m.top} r={r + 2} fill="var(--surface)" stroke="var(--amber)" strokeWidth={1.5} />
+                <circle cx={mm.x} cy={m.top} r={r * 0.6} fill="var(--amber)" />
+                <text
+                  x={mm.x} y={m.top + 3} fontSize="9.5" fontWeight={700}
+                  fill="var(--surface)" textAnchor="middle"
+                >C</text>
+                <circle cx={mm.x} cy={mm.gy} r={3} fill="var(--amber)" stroke="var(--surface)" strokeWidth={1.5} />
+              </g>
+            )
+          }
           // symptom / note — existing time-anchored pin + curve-snapped dot.
           const col = mm.redFlag ? 'var(--red)' : mm.kind === 'symptom' ? 'var(--amber)' : 'var(--text-muted)'
           return (
@@ -252,6 +287,14 @@ export function CGMChart({
       )}
       {hoverMk !== null && mks[hoverMk] && (() => {
         const mm = mks[hoverMk]
+        if (mm.kind === 'meal') {
+          const rows: { color: string; label: string; value: string }[] = [
+            { color: 'var(--amber)', label: mm.label, value: mm.carbs !== undefined ? `${Math.round(mm.carbs)} g carbs` : '' },
+            { color: 'var(--purple)', label: 'CGM at time', value: `${toDisplay(mm.val)} ${unit}` },
+          ]
+          if (mm.detail) rows.push({ color: 'transparent', label: mm.detail, value: '' })
+          return <Tooltip x={mm.x} width={width} title={fmtTime(mm.time)} rows={rows} />
+        }
         if (mm.kind === 'fingerstick' && mm.value !== undefined) {
           // Meter value first; CGM value at that time second so agreement is
           // glanceable; meal marker / source as the trailing detail line.

@@ -38,6 +38,20 @@ export interface DailyMetricRow {
   spo2_time_below_90: number | null  // %  (Oxylink % of valid recording time < 90%)
   spo2_whoop: number | null          // %  (Whoop recovery SpO2 — corroborating, NOT drift)
   skin_temp: number | null           // °C (Whoop skin temperature — drift-tracked)
+  // Food diary (migration_012) — eaten-day attribution.
+  // Engine reads these and applies its OWN lag for next-day outcomes;
+  // do NOT pre-shift to wake-day (double-shift mis-aligns).
+  carbs_g: number | null
+  protein_g: number | null
+  fat_g: number | null
+  fiber_g: number | null
+  sugar_g: number | null
+  sodium_mg: number | null
+  calories: number | null
+  /** Carbs consumed within 4h before that night's sleep onset (clock-time ≥18:00 GST fallback). */
+  evening_carbs_g: number | null
+  /** Minutes from the day's last meal to that night's sleep onset; null when either missing. */
+  last_meal_to_sleep_min: number | null
 }
 
 // Postgres `numeric` round-trips as string through PostgREST — coerce
@@ -75,6 +89,15 @@ function mapDailyRow(raw: Record<string, unknown>): DailyMetricRow {
     spo2_time_below_90: n(raw.spo2_time_below_90 as number | string | null),
     spo2_whoop: n(raw.spo2_whoop as number | string | null),
     skin_temp: n(raw.skin_temp as number | string | null),
+    carbs_g: n(raw.carbs_g as number | string | null),
+    protein_g: n(raw.protein_g as number | string | null),
+    fat_g: n(raw.fat_g as number | string | null),
+    fiber_g: n(raw.fiber_g as number | string | null),
+    sugar_g: n(raw.sugar_g as number | string | null),
+    sodium_mg: n(raw.sodium_mg as number | string | null),
+    calories: n(raw.calories as number | string | null),
+    evening_carbs_g: n(raw.evening_carbs_g as number | string | null),
+    last_meal_to_sleep_min: n(raw.last_meal_to_sleep_min as number | string | null),
   }
 }
 
@@ -97,7 +120,7 @@ export async function fetchDailyMetrics(days: number): Promise<DailyMetricRow[]>
   const { data, error } = await supabase
     .from('daily_metrics')
     .select(
-      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min, spo2_odi, spo2_time_below_90, spo2_whoop, skin_temp'
+      'date, sys, dia, pulse, weight, recovery, hrv, rhr, strain, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake, fasting, glucose_var, tir, cgm_count, spo2_avg, spo2_min, spo2_odi, spo2_time_below_90, spo2_whoop, skin_temp, carbs_g, protein_g, fat_g, fiber_g, sugar_g, sodium_mg, calories, evening_carbs_g, last_meal_to_sleep_min'
     )
     .gte('date', cutoff)
     .order('date', { ascending: true })

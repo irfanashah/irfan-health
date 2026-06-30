@@ -8,7 +8,7 @@
 
 import type { DailyMetricRow } from '@/app/lib/dashboard/daily-metrics'
 
-export type SourceKey = 'whoop' | 'withings' | 'nightscout' | 'oxylink'
+export type SourceKey = 'whoop' | 'withings' | 'nightscout' | 'oxylink' | 'food'
 
 export interface MetricDef {
   id: string
@@ -55,6 +55,15 @@ export const METRICS: readonly MetricDef[] = [
   { id: 'spo2_odi',           label: 'Desaturation index', short: 'ODI',         unit: '/h', source: 'oxylink',    color: 'var(--amber)',  acc: (d) => d.spo2_odi,           fmt: oneDp, better: 'low'  },
   { id: 'spo2_time_below_90', label: 'Time below 90% SpO2', short: 'T<90%',      unit: '%',  source: 'oxylink',    color: 'var(--red)',    acc: (d) => d.spo2_time_below_90, fmt: oneDp, better: 'low'  },
   { id: 'skin_temp',          label: 'Skin temperature',  short: 'Skin temp',   unit: '°C', source: 'whoop',      color: 'var(--amber)',  acc: (d) => d.skin_temp,          fmt: oneDp, better: 'low'  },
+  // Food diary — eaten-day attribution. Engine relates these to next-day
+  // outcomes via lag; never pre-shift to wake-day.
+  { id: 'carbs_g',                label: 'Carbs',                 short: 'Carbs',      unit: 'g',    source: 'food', color: 'var(--amber)',  acc: (d) => d.carbs_g,                fmt: intFmt, better: 'low'  },
+  { id: 'sugar_g',                label: 'Sugar',                 short: 'Sugar',      unit: 'g',    source: 'food', color: 'var(--amber)',  acc: (d) => d.sugar_g,                fmt: intFmt, better: 'low'  },
+  { id: 'fiber_g',                label: 'Fiber',                 short: 'Fiber',      unit: 'g',    source: 'food', color: 'var(--teal)',   acc: (d) => d.fiber_g,                fmt: intFmt, better: 'high' },
+  { id: 'sodium_mg',              label: 'Sodium',                short: 'Sodium',     unit: 'mg',   source: 'food', color: 'var(--red)',    acc: (d) => d.sodium_mg,              fmt: intFmt, better: 'low'  },
+  { id: 'calories',               label: 'Calories',              short: 'Calories',   unit: 'kcal', source: 'food', color: 'var(--purple)', acc: (d) => d.calories,               fmt: intFmt, better: 'low'  },
+  { id: 'evening_carbs_g',        label: 'Evening carbs',         short: 'Evening C',  unit: 'g',    source: 'food', color: 'var(--amber)',  acc: (d) => d.evening_carbs_g,        fmt: intFmt, better: 'low'  },
+  { id: 'last_meal_to_sleep_min', label: 'Last meal → sleep',     short: 'Meal→sleep', unit: 'min',  source: 'food', color: 'var(--teal)',   acc: (d) => d.last_meal_to_sleep_min, fmt: intFmt, better: 'high' },
 ]
 
 /**
@@ -68,6 +77,7 @@ export const EXPLORER_METRIC_IDS: readonly string[] = [
   'fasting', 'tir', 'glucose_var',
   'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90',
   'skin_temp',
+  'carbs_g', 'sugar_g', 'sodium_mg', 'evening_carbs_g', 'last_meal_to_sleep_min',
 ]
 
 /**
@@ -83,6 +93,9 @@ export const ENGINE_METRIC_IDS: readonly string[] = [
   'fasting', 'glucose_var', 'tir',
   'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90',
   'skin_temp',
+  // Food diary — flow through discovery automatically.
+  'carbs_g', 'sugar_g', 'fiber_g', 'sodium_mg', 'calories',
+  'evening_carbs_g', 'last_meal_to_sleep_min',
 ]
 
 export const METRIC_INDEX: Record<string, MetricDef> = Object.fromEntries(METRICS.map((m) => [m.id, m]))
@@ -107,4 +120,5 @@ export const SOURCE_LABELS: Record<SourceKey, string> = {
   withings: 'Withings',
   nightscout: 'Nightscout CGM',
   oxylink: 'Oxylink',
+  food: 'Food diary',
 }

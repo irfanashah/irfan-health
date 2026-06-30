@@ -285,6 +285,79 @@ spo2_daily AS (
       'spo2_odi','spo2_time_below_90_pct'
     )
   GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date
+),
+
+-- ----------------------------------------------------------------
+-- 9. Food diary — eaten-day attribution.
+--    Per GST eaten-day macro totals + evening_carbs_g (relative to
+--    THAT night's sleep onset) + last_meal_to_sleep_min.
+--
+--    Attribution rule (DO NOT change without thinking):
+--    Meal-derived metrics attribute to the GST EATEN-day. The lagged
+--    correlation engine relates them to next-day outcomes via its
+--    own lag — pre-shifting to wake-day here would DOUBLE-SHIFT
+--    (engine adds +1d on top of our +1d) and silently mis-align.
+--
+--    evening_carbs_g definition (primary):
+--      carbs from meals eaten within 4h BEFORE that night's sleep onset.
+--      "That night" = the sleep whose wake_day = eaten_day + 1.
+--    Fallback (no sleep recorded for the following morning):
+--      meals whose GST clock-time ≥ 18:00.
+--
+--    last_meal_to_sleep_min:
+--      minutes between the day's last meal (eaten_at) and the next
+--      night's sleep onset. Null when either is missing.
+-- ----------------------------------------------------------------
+whoop_sleep_onset AS (
+  -- Sleep onset (period_start) keyed by wake_day. wake_day = GST date
+  -- the user woke. Reused from whoop_wake's logic + carries the onset.
+  SELECT
+    (period_end AT TIME ZONE 'Asia/Dubai')::date AS wake_day,
+    period_start AS sleep_onset
+  FROM health_observations
+  WHERE source_slug = 'whoop'
+    AND metric_type = 'sleep_duration_total'
+    AND period_start IS NOT NULL
+    AND period_end IS NOT NULL
+),
+meals_enriched AS (
+  -- For each meal: GST eaten-day + the upcoming night's sleep onset
+  -- (sleep that ends on eaten_day + 1) + an is_evening flag with the
+  -- onset-relative primary + clock-time fallback per the comment above.
+  SELECT
+    m.eaten_at,
+    (m.eaten_at AT TIME ZONE 'Asia/Dubai')::date AS eaten_day,
+    m.carbs_g, m.protein_g, m.fat_g, m.fiber_g, m.sugar_g, m.sodium_mg, m.calories,
+    s.sleep_onset,
+    CASE
+      WHEN s.sleep_onset IS NOT NULL THEN
+        m.eaten_at >= s.sleep_onset - interval '4 hours'
+        AND m.eaten_at <= s.sleep_onset
+      ELSE
+        (m.eaten_at AT TIME ZONE 'Asia/Dubai')::time >= TIME '18:00'
+    END AS is_evening
+  FROM meals m
+  LEFT JOIN whoop_sleep_onset s
+    ON s.wake_day = (m.eaten_at AT TIME ZONE 'Asia/Dubai')::date + 1
+),
+meals_daily AS (
+  SELECT
+    eaten_day AS date,
+    SUM(carbs_g)   AS carbs_g,
+    SUM(protein_g) AS protein_g,
+    SUM(fat_g)     AS fat_g,
+    SUM(fiber_g)   AS fiber_g,
+    SUM(sugar_g)   AS sugar_g,
+    SUM(sodium_mg) AS sodium_mg,
+    SUM(calories)  AS calories,
+    SUM(carbs_g) FILTER (WHERE is_evening) AS evening_carbs_g,
+    -- min(sleep_onset - eaten_at), in minutes. MAX(eaten_at) is the
+    -- day's last meal; MAX(sleep_onset) is the upcoming night's onset
+    -- (it's constant within the group — same wake_day = eaten_day+1).
+    EXTRACT(EPOCH FROM (MAX(sleep_onset) - MAX(eaten_at))) / 60.0
+      AS last_meal_to_sleep_min
+  FROM meals_enriched
+  GROUP BY eaten_day
 )
 
 SELECT
@@ -303,7 +376,10 @@ SELECT
   -- can only add columns at the end; inserting in the middle errors
   -- "cannot change name of view column"). Order doesn't affect SELECT-
   -- by-name from the data module.
-  wh.spo2_whoop, wh.skin_temp
+  wh.spo2_whoop, wh.skin_temp,
+  -- Food diary (Slice — food-diary, migration_012). Eaten-day attribution.
+  md.carbs_g, md.protein_g, md.fat_g, md.fiber_g, md.sugar_g, md.sodium_mg, md.calories,
+  md.evening_carbs_g, md.last_meal_to_sleep_min
 FROM date_series ds
 LEFT JOIN bp_daily     bp ON bp.date = ds.date
 LEFT JOIN weight_daily w  ON w.date  = ds.date
@@ -312,6 +388,7 @@ LEFT JOIN sleep_daily  sl ON sl.date = ds.date
 LEFT JOIN cgm_fasting  cf ON cf.date = ds.date
 LEFT JOIN cgm_stats    cs ON cs.date = ds.date
 LEFT JOIN spo2_daily   sp ON sp.date = ds.date
+LEFT JOIN meals_daily  md ON md.date = ds.date
 ORDER BY ds.date;
 
 

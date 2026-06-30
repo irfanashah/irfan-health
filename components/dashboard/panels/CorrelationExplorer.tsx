@@ -184,6 +184,8 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
   const [selectedLag, setSelectedLag] = useState(0)
   const [controlStrain, setControlStrain] = useState(false)
   const [controlDow, setControlDow] = useState(false)
+  const [controlEveningCarbs, setControlEveningCarbs] = useState(false)
+  const [controlSodium, setControlSodium] = useState(false)
 
   const A: MetricDef = METRIC_INDEX[aId]
   const B: MetricDef = METRIC_INDEX[bId]
@@ -248,7 +250,7 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
   // re-correlates. The unadjusted r above is also Spearman so the two are
   // directly comparable.
   const partial = useMemo(() => {
-    if (!controlStrain && !controlDow) return null
+    if (!controlStrain && !controlDow && !controlEveningCarbs && !controlSodium) return null
     if (scatter.length < MIN_PARTIAL_N) {
       return { adjusted: false, reason: `n=${scatter.length} < ${MIN_PARTIAL_N}` }
     }
@@ -271,6 +273,24 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
       const cv: number[] = []
       for (let t = 0; t < (L >= 0 ? N - L : N + L); t++) {
         cv.push(new Date(series[t].date).getUTCDay())
+      }
+      covs.push(cv)
+    }
+    if (controlEveningCarbs) {
+      const ec = series.map((d) => d.evening_carbs_g ?? NaN)
+      const cv: number[] = []
+      for (let t = 0; t < (L >= 0 ? N - L : N + L); t++) {
+        const v = ec[t]
+        cv.push(Number.isFinite(v) ? v : 0)
+      }
+      covs.push(cv)
+    }
+    if (controlSodium) {
+      const so = series.map((d) => d.sodium_mg ?? NaN)
+      const cv: number[] = []
+      for (let t = 0; t < (L >= 0 ? N - L : N + L); t++) {
+        const v = so[t]
+        cv.push(Number.isFinite(v) ? v : 0)
       }
       covs.push(cv)
     }
@@ -300,7 +320,7 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
     if (xs.length < MIN_PARTIAL_N) return { adjusted: false, reason: `n=${xs.length} < ${MIN_PARTIAL_N}` }
     const { r } = partialCorr(xs, ys, cs, 'spearman')
     return { adjusted: true, rPartial: r, n: xs.length }
-  }, [controlStrain, controlDow, selectedLag, xSeries, ySeries, series, scatter.length])
+  }, [controlStrain, controlDow, controlEveningCarbs, controlSodium, selectedLag, xSeries, ySeries, series, scatter.length])
 
   // Significance bundle for the selected lag (uses n_eff).
   const sig = useMemo(() => {
@@ -367,6 +387,22 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
           />
           <span>Control for day-of-week</span>
         </label>
+        <label className="corr-toggle">
+          <input
+            type="checkbox"
+            checked={controlEveningCarbs}
+            onChange={(e) => setControlEveningCarbs(e.target.checked)}
+          />
+          <span>Control for evening carbs</span>
+        </label>
+        <label className="corr-toggle">
+          <input
+            type="checkbox"
+            checked={controlSodium}
+            onChange={(e) => setControlSodium(e.target.checked)}
+          />
+          <span>Control for sodium</span>
+        </label>
       </div>
 
       {isDerivedPair && (
@@ -423,7 +459,7 @@ export function CorrelationExplorerPanel({ series, exclusions }: Props) {
           {partial.adjusted ? (
             <>
               <strong>Adjusted rS = {partial.rPartial!.toFixed(2)}</strong>{' '}
-              (controlling for {[controlStrain && 'strain', controlDow && 'day-of-week'].filter(Boolean).join(' + ')}, n={partial.n}).
+              (controlling for {[controlStrain && 'strain', controlDow && 'day-of-week', controlEveningCarbs && 'evening carbs', controlSodium && 'sodium'].filter(Boolean).join(' + ')}, n={partial.n}).
               Compare against the unadjusted rS above — if they diverge a lot, the covariate is doing real work.
             </>
           ) : (

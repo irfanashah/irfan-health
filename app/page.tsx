@@ -13,6 +13,7 @@ import { fetchAllPanels, fetchAllMarkerTrends } from '@/app/labs/actions'
 import { fetchAdherence } from '@/app/medications/actions'
 import { fetchRecentManual } from '@/app/log/_lib/fetch-recent'
 import { fetchEngineExclusions } from '@/app/lib/dashboard/exclusions'
+import { fetchTodayMeals } from '@/app/food/actions'
 import './dashboard.css'
 
 export default async function DashboardPage() {
@@ -35,7 +36,7 @@ export default async function DashboardPage() {
   const windowStart = new Date(Date.now() - (ENGINE_WINDOW_DAYS - 1) * 86400000)
     .toISOString().slice(0, 10)
 
-  const [series, cgm24h, recent, baselines, spo2Night, fingersticks, labPanels, labTrends, adherence, engineExclusions] =
+  const [series, cgm24h, recent, baselines, spo2Night, fingersticks, labPanels, labTrends, adherence, engineExclusions, todayMeals] =
     await Promise.all([
       fetchDailyMetrics(ENGINE_WINDOW_DAYS),
       fetchCgm24h(),
@@ -47,6 +48,7 @@ export default async function DashboardPage() {
       fetchAllMarkerTrends(),
       fetchAdherence(30),
       fetchEngineExclusions(windowStart, windowEnd),
+      fetchTodayMeals(),
     ])
   const latest = await fetchLatestKpis(cgm24h)
   const llmConfoundersAvailable = !!process.env.ANTHROPIC_API_KEY
@@ -65,6 +67,7 @@ export default async function DashboardPage() {
       adherence={adherence}
       engineExclusions={engineExclusions}
       llmConfoundersAvailable={llmConfoundersAvailable}
+      todayMeals={todayMeals}
     />
   )
 }
