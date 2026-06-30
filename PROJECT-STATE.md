@@ -1,6 +1,6 @@
 # Project State — Irfan's Health Platform
 
-_Last updated: 2026-06-30 (session: code-review Phase-1 remediation — PHI-read guards on every 'use server' export, App Router error boundaries, 3 correctness bugs fixed (diagnose Whoop spo2 rename, meal-to-sleep negative, sleep-onset fan-out), migration_013 perf indexes, trivial cleanups)_
+_Last updated: 2026-06-30 (session: code-review Phase-1 remediation shipped + migrations 003/013 applied — PHI-read guards on every 'use server' export, App Router error boundaries, 3 correctness bugs, perf indexes, cleanups)_
 _Authoritative live build record is `CLAUDE.md`. This file is the concise snapshot; Cowork mirrors it into memory. If the two disagree, CLAUDE.md wins._
 
 ## Now
@@ -40,11 +40,9 @@ Unchanged for existing sources. **New surface area**:
 - `med_adherence` (NEW, migration_011) — one row per GST calendar day, tri-state status; populated by the new one-tap panel. Empty until Irfan starts tapping.
 
 ## Next action
-1. **Re-run `migration_003_daily_metrics_view.sql`** in Supabase — `whoop_sleep_onset` now `DISTINCT ON (wake_day)` so a split-sleep night doesn't double meal totals; `last_meal_to_sleep_min` constrained `eaten_at <= sleep_onset` + `GREATEST(0, …)` so post-midnight meals can't push it negative. `CREATE OR REPLACE` — single re-run, no drop.
-2. **Run `migration_013_perf_indexes.sql`** — composite on `ingestion_log` (currently zero indexes; cron + diagnostics pay full scans) + `health_observations` partial index for SpO2 latest-night queries. Idempotent.
-3. After deploy, `/diagnostics` Whoop card should drop the permanent `spo2_overnight_avg` false gap (the type was renamed to `spo2_whoop` in `migration_007`; Diagnose was still looking for the old name). Spot-check the dashboard still loads: `/`, `/labs`, `/medications`, `/food` should all render for the logged-in user. Trigger an unhandled error in one segment if you want to see `app/error.tsx` — but skip if not curious.
-4. Log a meal at `/food` like the food-slice test (still works; the guards are behaviour-neutral for authenticated reads).
-5. Once green, the next slot is the **Withings weight extension** — extend `adapters/withings/{api,index}.ts` + `app/api/refill/withings/route.ts` (gotcha #25 — they must agree) to request `meastype=1` and write `metric_type='weight'`, canonical `kg`. No new migration. Unblocks the Weight panel, Weight KPI, BP-vs-weight Correlation preset, and the weight drift signal.
+1. Confirm post-deploy: `/diagnostics` Whoop card should no longer claim an `spo2_overnight_avg` permanent gap (the type was renamed to `spo2_whoop` in `migration_007`; Diagnose now checks the right name + `skin_temp`). Spot-check `/`, `/labs`, `/medications`, `/food` still render for the logged-in user — the new `await requireSession()` guards must be transparent to authenticated reads.
+2. Log a meal at `/food` to verify the food-diary flow still works through the guards.
+3. Next slot is the **Withings weight extension** — extend `adapters/withings/{api,index}.ts` + `app/api/refill/withings/route.ts` (gotcha #25 — they must agree) to request `meastype=1` and write `metric_type='weight'`, canonical `kg`. No new migration. Unblocks the Weight panel, Weight KPI, BP-vs-weight Correlation preset, and the weight drift signal.
 
 ## Open items (non-blocking)
 - Anchor population — `/baselines` set-anchor form built; populate post-rehab.
