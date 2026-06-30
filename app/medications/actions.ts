@@ -10,6 +10,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
+// GST helpers live in lib/gst.ts (gotcha #116) so the adherence-reminder
+// cron can share the same "today" definition. A 'use server' file
+// can't export a plain util to non-server callers.
+import { gstTodayISO, gstDaysBack } from '@/lib/gst'
 
 async function requireSession() {
   const supabase = await createClient()
@@ -160,28 +164,6 @@ export async function reactivateMedication(id: string): Promise<MedActionResult>
 // separate (adherence-of-logged + coverage); we never collapse them
 // into one alarming "low adherence" %.
 
-/**
- * Today's calendar date in Asia/Dubai (UTC+4, no DST — fixed offset).
- * Returns 'YYYY-MM-DD'. Don't trust the server's UTC date — a late-night
- * tap from Irfan near UTC midnight would land on the wrong GST day.
- * (Gotcha #31 — all day-bucketing across the platform uses GST.)
- */
-function gstTodayISO(): string {
-  const now = Date.now()
-  const dubaiMs = now + 4 * 60 * 60 * 1000
-  return new Date(dubaiMs).toISOString().slice(0, 10)
-}
-
-/** Walk back N GST days from today; index 0 = today, N-1 = oldest. */
-function gstDaysBack(n: number): string[] {
-  const today = gstTodayISO()
-  const todayMs = Date.parse(today + 'T00:00:00Z')
-  const out: string[] = []
-  for (let i = 0; i < n; i++) {
-    out.push(new Date(todayMs - i * 86400000).toISOString().slice(0, 10))
-  }
-  return out
-}
 
 export type AdherenceStatus = 'taken' | 'skipped' | 'cleared'
 export type AdherenceDayStatus = 'taken' | 'skipped' | 'unknown'

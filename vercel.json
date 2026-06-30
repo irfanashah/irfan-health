@@ -19,6 +19,14 @@
     {
       "path": "/api/cron/file-drop",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/health-check",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/adherence-reminder",
+      "schedule": "0 9 * * *"
     }
   ]
 }
