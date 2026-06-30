@@ -40,9 +40,7 @@ Unchanged for existing sources. **New surface area**:
 - `med_adherence` (NEW, migration_011) — one row per GST calendar day, tri-state status; populated by the new one-tap panel. Empty until Irfan starts tapping.
 
 ## Next action
-1. Confirm post-deploy: `/diagnostics` Whoop card should no longer claim an `spo2_overnight_avg` permanent gap (the type was renamed to `spo2_whoop` in `migration_007`; Diagnose now checks the right name + `skin_temp`). Spot-check `/`, `/labs`, `/medications`, `/food` still render for the logged-in user — the new `await requireSession()` guards must be transparent to authenticated reads.
-2. Log a meal at `/food` to verify the food-diary flow still works through the guards.
-3. Next slot is the **Withings weight extension** — extend `adapters/withings/{api,index}.ts` + `app/api/refill/withings/route.ts` (gotcha #25 — they must agree) to request `meastype=1` and write `metric_type='weight'`, canonical `kg`. No new migration. Unblocks the Weight panel, Weight KPI, BP-vs-weight Correlation preset, and the weight drift signal.
+**Withings weight extension** (small follow-on) — extend `adapters/withings/{api,index}.ts` + `app/api/refill/withings/route.ts` (gotcha #25 — they must agree) to request `meastype=1` and write `metric_type='weight'`, canonical `kg`. No new migration. Unblocks the Weight panel, Weight KPI, BP-vs-weight Correlation preset, and the weight drift signal. Phase-1 remediation is verified live (diagnostics gap cleared, dashboard reads work through the new auth guards).
 
 ## Open items (non-blocking)
 - Anchor population — `/baselines` set-anchor form built; populate post-rehab.
