@@ -7,6 +7,7 @@ import { CGMChart, type CgmMarker } from '../charts/CGMChart'
 import { Donut } from '../charts/Donut'
 import { GLUCOSE_HI, GLUCOSE_LO, MMOL_TO_MGDL, STATUS_COLOR, st } from '../thresholds'
 import type { CgmPoint, LatestKpis, FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
+import { useIsClient } from '@/lib/hooks/useIsClient'
 
 /** Slim meal-marker shape — what the page passes from `meals` rows. */
 export interface MealMarkerInput {
@@ -73,8 +74,16 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
 
   // ─── Fingerstick slices ────────────────────────────────────────────────
   // Ascending order from the reader; slice for the two distinct uses.
-  const since24h = Date.now() - DAY_MS
-  const fingersticks24h = fingersticks.filter((fs) => fs.time.getTime() >= since24h)
+  // `since24h` is gated behind `useIsClient()` (null during SSR/first paint)
+  // so the server-rendered markup and the client's hydration render agree —
+  // same "start empty, fill in right after mount" idiom already used by
+  // Header/ThemeToggle for other client-only, time-derived values. Recomputed
+  // fresh on every render once mounted (not memoized), so a long-lived tab
+  // stays correct as fresh props arrive via router.refresh() — unlike a
+  // frozen-at-mount value, which would let the 24h window silently go stale.
+  const isClient = useIsClient()
+  const since24h = isClient ? new Date().getTime() - DAY_MS : null
+  const fingersticks24h = since24h === null ? [] : fingersticks.filter((fs) => fs.time.getTime() >= since24h)
   const fingersticksNewestFirst = [...fingersticks].reverse()
   const latestFingerstick = fingersticksNewestFirst[0] ?? null
   const recentFingerstickList = fingersticksNewestFirst.slice(0, FALLBACK_LIST_LIMIT)
@@ -100,8 +109,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
   // Meal markers — only meals within the 24h CGM window. Carbs sizes
   // the glyph; the description is the tooltip detail. Honesty: macros
   // are LLM estimates (gotcha — labelled in the tooltip via "≈").
-  const mealMarkers: CgmMarker[] = meals
-    .filter((m) => m.time.getTime() >= since24h)
+  const mealMarkers: CgmMarker[] = (since24h === null ? [] : meals.filter((m) => m.time.getTime() >= since24h))
     .map((m) => ({
       id: `meal-${m.id}`,
       time: m.time,

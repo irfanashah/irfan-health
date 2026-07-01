@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Dead reference source — decoded/extracted from the Claude Design HTML
+    // exports, ported FROM (see comments throughout components/dashboard/),
+    // never imported by the live app and never built. See CLAUDE.md's
+    // "Prototype source" reference note.
+    "prototype-src/**",
+    "outputs/**",
   ]),
 ]);
 

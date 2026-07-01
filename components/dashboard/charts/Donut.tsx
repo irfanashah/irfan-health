@@ -27,27 +27,28 @@ export function Donut({
   const circ = 2 * Math.PI * r
   const total = segments.reduce((a, s) => a + s.value, 0) || 1
 
-  let offset = 0
-  const arcs = segments.map((s, i) => {
-    const frac = s.value / total
-    const len = frac * circ
-    const el = (
-      <circle
-        key={i}
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke={s.color}
-        strokeWidth={thickness}
-        strokeDasharray={`${len} ${circ - len}`}
-        strokeDashoffset={-offset}
-        strokeLinecap="butt"
-      />
-    )
-    offset += len
-    return el
-  })
+  // Precompute each arc's length + cumulative starting offset BEFORE
+  // building any JSX — no mutation of a running total during the render map.
+  const lens = segments.map((s) => (s.value / total) * circ)
+  const offsets = lens.reduce<number[]>((acc, len, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + lens[i - 1])
+    return acc
+  }, [])
+
+  const arcs = segments.map((s, i) => (
+    <circle
+      key={i}
+      cx={cx}
+      cy={cy}
+      r={r}
+      fill="none"
+      stroke={s.color}
+      strokeWidth={thickness}
+      strokeDasharray={`${lens[i]} ${circ - lens[i]}`}
+      strokeDashoffset={-offsets[i]}
+      strokeLinecap="butt"
+    />
+  ))
 
   return (
     <div style={{ position: 'relative', width: size, height: size }}>

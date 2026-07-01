@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import { useMeasure } from './useMeasure'
 import { clampN, fmtTime, smoothPath } from './chart-utils'
 import { Tooltip } from './Tooltip'
@@ -60,7 +60,27 @@ export function CGMChart({
   const [ref, w] = useMeasure()
   const [hover, setHover] = useState<number | null>(null)
   const [hoverMk, setHoverMk] = useState<number | null>(null)
-  const gid = useMemo(() => 'cgm' + Math.random().toString(36).slice(2), [])
+  const gid = 'cgm' + useId().replace(/:/g, '')
+
+  // Hoisted above the empty-data guard below — every hook (incl. useCallback)
+  // must run unconditionally on every render, in the same order, regardless
+  // of `data.length`. `width`/`m`/`iw`/`n` are plain derived values (not
+  // hooks) needed by `onMove`'s dependency array, so they move up with it;
+  // everything else that only the non-empty render path needs stays below.
+  const width = w || 700
+  const m = { top: 14, right: 14, bottom: 26, left: 40 }
+  const iw = Math.max(10, width - m.left - m.right)
+  const n = data.length
+
+  const onMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left - m.left
+      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
+      setHover(idx)
+    },
+    [iw, n, m.left]
+  )
 
   if (data.length === 0) {
     return (
@@ -70,11 +90,7 @@ export function CGMChart({
     )
   }
 
-  const width = w || 700
-  const m = { top: 14, right: 14, bottom: 26, left: 40 }
-  const iw = Math.max(10, width - m.left - m.right)
   const ih = height - m.top - m.bottom
-  const n = data.length
 
   const vals = data.map((d) => d.value)
   let dLo = Math.min(...vals, lo)
@@ -95,16 +111,6 @@ export function CGMChart({
   const yticks: number[] = []
   const yStep = dHi - dLo <= 8 ? 2 : 3
   for (let v = dLo; v <= dHi; v += yStep) yticks.push(v)
-
-  const onMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const x = e.clientX - rect.left - m.left
-      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
-      setHover(idx)
-    },
-    [iw, n, m.left]
-  )
 
   // Map markers (by timestamp) to an x position + the CGM value at that time.
   // Out-of-window markers drop out — the panel filters before passing, but we

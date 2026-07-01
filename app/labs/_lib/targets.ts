@@ -231,25 +231,36 @@ function trendTowardGoal(
   return latest < prior ? 'improving' : 'worsening'
 }
 
+// Boundary comparisons below are `<=`/`>=` against a value that's frequently
+// the sum of two decimals (e.g. LDL's target=1.4 + nearBuffer=0.2). IEEE754
+// doesn't guarantee `1.4 + 0.2 === 1.6` — it's actually 1.5999999999999999 —
+// so a value at EXACTLY the documented boundary (a completely plausible real
+// lab reading) could fall on the wrong side by a fraction of a float ULP.
+// A tiny epsilon absorbs that without meaningfully widening any band (1e-9
+// is far below any clinically-meaningful lab precision). Applied uniformly
+// to every boundary check here, not just the one case that happened to
+// surface it, so the fix isn't direction- or marker-specific.
+const BOUNDARY_EPS = 1e-9
+
 function goalStateLower(value: number, goal: number, near: number): LabGoalState {
-  if (value <= goal) return 'at-goal'
-  if (value <= goal + near) return 'near'
+  if (value <= goal + BOUNDARY_EPS) return 'at-goal'
+  if (value <= goal + near + BOUNDARY_EPS) return 'near'
   return 'off-goal'
 }
 
 function goalStateHigher(value: number, goal: number, near: number): LabGoalState {
-  if (value >= goal) return 'at-goal'
-  if (value >= goal - near) return 'near'
+  if (value >= goal - BOUNDARY_EPS) return 'at-goal'
+  if (value >= goal - near - BOUNDARY_EPS) return 'near'
   return 'off-goal'
 }
 
 function goalStateRange(value: number, t: LabTarget): LabGoalState {
   // hba1c-style: at-goal ≤ targetHigh, near in (targetHigh, watchHigh], else off.
-  if (t.targetHigh !== undefined && value <= t.targetHigh) {
-    if (t.targetLow === undefined || value >= t.targetLow) return 'at-goal'
+  if (t.targetHigh !== undefined && value <= t.targetHigh + BOUNDARY_EPS) {
+    if (t.targetLow === undefined || value >= t.targetLow - BOUNDARY_EPS) return 'at-goal'
     return 'off-goal' // below an explicit floor
   }
-  if (t.watchHigh !== undefined && value <= t.watchHigh) return 'near'
+  if (t.watchHigh !== undefined && value <= t.watchHigh + BOUNDARY_EPS) return 'near'
   return 'off-goal'
 }
 

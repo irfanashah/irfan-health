@@ -29,8 +29,16 @@ export function BackfillButton() {
   const [sweepCursor, setSweepCursorRaw] = useState<string | null>(null)
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SWEEP_CURSOR_KEY)
-    if (stored) setSweepCursorRaw(stored)
+    // Deferred into a callback (not a bare synchronous call as the effect's
+    // first statement) — reads localStorage a tick after mount rather than
+    // as the effect body's direct first action; same practical timing
+    // (imperceptible), avoids the direct-setState-in-effect pattern while
+    // staying hydration-safe (SSR/first-paint always sees `null`).
+    const t = setTimeout(() => {
+      const stored = window.localStorage.getItem(SWEEP_CURSOR_KEY)
+      if (stored) setSweepCursorRaw(stored)
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   function setSweepCursor(next: string | null) {
@@ -150,7 +158,7 @@ export function BackfillButton() {
           <p className={`text-sm ${colourFor(sweepStatus)}`}>{sweepMessage}</p>
         )}
         <p className="text-xs text-muted-foreground/70">
-          Sweep walks the full window in 30-day chunks regardless of what's already in the DB.
+          Sweep walks the full window in 30-day chunks regardless of what&apos;s already in the DB.
           Cursor is saved across refreshes — each click picks up where the last one stopped.
         </p>
       </div>

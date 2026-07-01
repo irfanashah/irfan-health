@@ -80,6 +80,18 @@ export function TrendChart<T>({
   const ih = height - m.top - m.bottom
   const n = data.length
 
+  // Hoisted above the empty-data guard below — every hook must run
+  // unconditionally on every render, in the same order, regardless of `n`.
+  const onMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left - m.left
+      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
+      setHover(idx)
+    },
+    [iw, n, m.left]
+  )
+
   if (n === 0) {
     return (
       <div ref={ref} style={{ position: 'relative', width: '100%' }}>
@@ -115,16 +127,6 @@ export function TrendChart<T>({
   const step = Math.max(1, Math.ceil(n / maxXTicks))
   for (let i = 0; i < n; i += step) xTickIdx.push(i)
   if (xTickIdx[xTickIdx.length - 1] !== n - 1) xTickIdx.push(n - 1)
-
-  const onMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const x = e.clientX - rect.left - m.left
-      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
-      setHover(idx)
-    },
-    [iw, n, m.left]
-  )
 
   // For each series, segment points by null-gaps so smoothPath doesn't span them.
   function buildSegments(s: TrendSeries<T>): Array<Array<{ x: number; y: number }>> {

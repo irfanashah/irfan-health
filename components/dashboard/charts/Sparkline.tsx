@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useId } from 'react'
 import { smoothPath } from './chart-utils'
 
 interface Props {
@@ -36,7 +36,7 @@ export function Sparkline({
   height = 34,
   fill = true,
 }: Props) {
-  const gid = useMemo(() => 'spark' + Math.random().toString(36).slice(2), [])
+  const gid = 'spark' + useId().replace(/:/g, '')
   if (!data || data.length === 0) return null
 
   const n = data.length

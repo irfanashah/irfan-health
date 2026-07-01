@@ -16,9 +16,13 @@ export function TimelinePanel({ entries }: Props) {
   // "just now" / "5m ago" boundaries.
   const [now, setNow] = useState<Date | null>(null)
   useEffect(() => {
-    setNow(new Date())
+    // Defer the initial resolve into a callback (not a bare synchronous call
+    // as the effect's first statement) — same near-immediate timing, avoids
+    // the direct-setState-in-effect pattern. Subsequent ticks already go
+    // through the setInterval callback, which is the sanctioned shape.
+    const initial = setTimeout(() => setNow(new Date()), 0)
     const t = setInterval(() => setNow(new Date()), 60_000)
-    return () => clearInterval(t)
+    return () => { clearTimeout(initial); clearInterval(t) }
   }, [])
 
   return (

@@ -116,7 +116,7 @@ export function MedAdherencePanel({ adherence }: Props) {
               </div>
               <div className="med-adh-row-actions">
                 <button type="button" className="med-adh-btn med-adh-btn-primary" onClick={onConfirm} disabled={busy}>
-                  <CheckCircle2 size={14} /> Took today's meds
+                  <CheckCircle2 size={14} /> Took today&apos;s meds
                 </button>
                 <button type="button" className="med-adh-btn med-adh-btn-ghost" onClick={onUndo} disabled={busy}>
                   <RotateCcw size={14} /> Undo
@@ -131,7 +131,7 @@ export function MedAdherencePanel({ adherence }: Props) {
                 onClick={onConfirm}
                 disabled={busy}
               >
-                <CheckCircle2 size={18} /> Took today's meds
+                <CheckCircle2 size={18} /> Took today&apos;s meds
               </button>
               {!showSkipNote ? (
                 <button

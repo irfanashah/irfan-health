@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import { useMeasure } from './useMeasure'
 import { clampN, fmtTime, smoothPath } from './chart-utils'
 import { Tooltip } from './Tooltip'
@@ -35,7 +35,27 @@ export function Spo2OvernightChart({
   const [ref, w] = useMeasure()
   const [hover, setHover] = useState<number | null>(null)
   const [hoverEv, setHoverEv] = useState<number | null>(null)
-  const gid = useMemo(() => 'spo2' + Math.random().toString(36).slice(2), [])
+  const gid = 'spo2' + useId().replace(/:/g, '')
+
+  // Hoisted above the empty-data guard below — every hook (incl. useCallback)
+  // must run unconditionally on every render, in the same order, regardless
+  // of `data.length`. `width`/`m`/`iw`/`n` are plain derived values (not
+  // hooks) needed by `onMove`'s dependency array, so they move up with it;
+  // everything else that only the non-empty render path needs stays below.
+  const width = w || 700
+  const m = { top: 14, right: 14, bottom: 26, left: 40 }
+  const iw = Math.max(10, width - m.left - m.right)
+  const n = data.length
+
+  const onMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left - m.left
+      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
+      setHover(idx)
+    },
+    [iw, n, m.left]
+  )
 
   if (data.length === 0) {
     return (
@@ -45,11 +65,7 @@ export function Spo2OvernightChart({
     )
   }
 
-  const width = w || 700
-  const m = { top: 14, right: 14, bottom: 26, left: 40 }
-  const iw = Math.max(10, width - m.left - m.right)
   const ih = height - m.top - m.bottom
-  const n = data.length
 
   // Fixed y-domain that always shows the desaturation floor + the normal band.
   // SpO2 ≥ 100 is impossible by definition; 80 is a generous lower floor that
@@ -92,16 +108,6 @@ export function Spo2OvernightChart({
   }
 
   const yticks = [80, 85, 90, 95, 100]
-
-  const onMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const x = e.clientX - rect.left - m.left
-      const idx = Math.round(clampN((x / iw) * (n - 1), 0, n - 1))
-      setHover(idx)
-    },
-    [iw, n, m.left]
-  )
 
   // ─── Desaturation event markers ──────────────────────────────────────
   // Position each marker at the event's TRUE timestamp (interpolated

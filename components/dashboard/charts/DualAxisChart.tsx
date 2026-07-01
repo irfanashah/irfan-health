@@ -45,6 +45,17 @@ export function DualAxisChart<T>({
   const ih = height - m.top - m.bottom
   const n = data.length
 
+  // Hoisted above the empty-data guard below — every hook must run
+  // unconditionally on every render, in the same order, regardless of `n`.
+  const onMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left - m.left
+      setHover(Math.round(clampN((x / iw) * (n - 1), 0, n - 1)))
+    },
+    [iw, n, m.left]
+  )
+
   if (n === 0) {
     return (
       <div ref={ref} style={{ position: 'relative', width: '100%' }}>
@@ -60,8 +71,8 @@ export function DualAxisChart<T>({
       if (v !== null && Number.isFinite(v)) vs.push(v)
     }
     if (vs.length === 0) return [0, 1]
-    let lo = Math.min(...vs)
-    let hi = Math.max(...vs)
+    const lo = Math.min(...vs)
+    const hi = Math.max(...vs)
     const p = (hi - lo) * 0.14 || 1
     return [lo - p, hi + p]
   }
@@ -101,15 +112,6 @@ export function DualAxisChart<T>({
 
   const aTicks = [aLo + (aHi - aLo) * 0.1, (aLo + aHi) / 2, aHi - (aHi - aLo) * 0.1]
   const bTicks = [bLo + (bHi - bLo) * 0.1, (bLo + bHi) / 2, bHi - (bHi - bLo) * 0.1]
-
-  const onMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const x = e.clientX - rect.left - m.left
-      setHover(Math.round(clampN((x / iw) * (n - 1), 0, n - 1)))
-    },
-    [iw, n, m.left]
-  )
 
   const aFmt = a.fmt ?? ((v: number) => Math.round(v))
   const bFmt = b.fmt ?? ((v: number) => Math.round(v))

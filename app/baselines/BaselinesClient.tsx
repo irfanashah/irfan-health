@@ -52,11 +52,11 @@ export function BaselinesClient({ anchors, contexts, medChanges }: Props) {
 function SetAnchorForm() {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const today = new Date().toISOString().slice(0, 10)
-  const fourWeeksAgo = new Date(Date.now() - 27 * 86400000).toISOString().slice(0, 10)
 
-  const [start, setStart] = useState(fourWeeksAgo)
-  const [end, setEnd] = useState(today)
+  // Lazy initializers — computed exactly once at mount, not recomputed (and
+  // discarded) on every re-render the way a plain `const` here would be.
+  const [start, setStart] = useState(() => new Date(Date.now() - 27 * 86400000).toISOString().slice(0, 10))
+  const [end, setEnd] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
   const [preview, setPreview] = useState<AnchorPreviewRow[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -279,9 +279,9 @@ function ContextPeriodForm() {
 }
 
 function ContextHistory({ contexts }: { contexts: ContextRow[] }) {
-  if (contexts.length === 0) return null
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  if (contexts.length === 0) return null
   function onDeactivate(id: string) {
     if (!window.confirm('Deactivate this context period? Past row stays for history; future days stop being suppressed/excluded.')) return
     startTransition(async () => { await deactivateContextPeriodAction(id); router.refresh() })
@@ -414,9 +414,9 @@ function MedChangeForm() {
 }
 
 function MedChangeHistory({ medChanges }: { medChanges: MedRow[] }) {
-  if (medChanges.length === 0) return null
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  if (medChanges.length === 0) return null
   function onDeactivate(id: string) {
     if (!window.confirm('Deactivate this med change? The reset stops applying to future windows.')) return
     startTransition(async () => { await deactivateMedChangeAction(id); router.refresh() })

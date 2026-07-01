@@ -21,13 +21,13 @@ describe('evaluateLabMarker — LDL ("lower" direction)', () => {
     expect(evaluateLabMarker(trend('ldl', [pt(1.2, '2026-01-01')])).goalState).toBe('at-goal')
     expect(evaluateLabMarker(trend('ldl', [pt(1.4, '2026-01-01')])).goalState).toBe('at-goal')
   })
-  it('near: target < latest <= target+nearBuffer (1.4-1.6)', () => {
+  it('near: target < latest <= target+nearBuffer (1.4-1.6), including the exact float boundary', () => {
     expect(evaluateLabMarker(trend('ldl', [pt(1.5, '2026-01-01')])).goalState).toBe('near')
     expect(evaluateLabMarker(trend('ldl', [pt(1.59, '2026-01-01')])).goalState).toBe('near')
-    // NB: latest===1.6 exactly is a known boundary bug, not asserted here —
-    // see the code-review report filed alongside this suite. 1.4+0.2 is
-    // 1.5999999999999999 in IEEE754, so goalStateLower's `value <= goal+near`
-    // misclassifies the documented boundary value itself as 'off-goal'.
+    // 1.4 + 0.2 === 1.5999999999999999 in IEEE754 — a real LDL reading of
+    // EXACTLY 1.6 mmol/L must still land in 'near', not 'off-goal'. This was
+    // a real bug (see BOUNDARY_EPS in targets.ts); this is the regression test.
+    expect(evaluateLabMarker(trend('ldl', [pt(1.6, '2026-01-01')])).goalState).toBe('near')
   })
   it('off-goal: latest > 1.6', () => {
     expect(evaluateLabMarker(trend('ldl', [pt(1.61, '2026-01-01')])).goalState).toBe('off-goal')
@@ -61,17 +61,6 @@ describe('evaluateLabMarker — LDL ("lower" direction)', () => {
   it('ldl is modifiable', () => {
     expect(evaluateLabMarker(trend('ldl', [pt(1.2, 'a')])).modifiable).toBe(true)
   })
-
-  // KNOWN BUG (found while writing this suite, reported separately — not
-  // patched here): goalStateLower's `value <= goal + near` boundary check is
-  // floating-point-exact, and 1.4 + 0.2 === 1.5999999999999999 in IEEE754.
-  // So a real LDL reading of EXACTLY 1.6 mmol/L — the documented edge of the
-  // "near" band — is misclassified as 'off-goal'. `it.fails` keeps this
-  // tracked without failing the suite; if it's fixed, this test starts
-  // failing too, which is the prompt to delete the `.fails` marker.
-  it.fails('1.6 mmol/L (the documented near-goal boundary) should classify as "near", not "off-goal"', () => {
-    expect(evaluateLabMarker(trend('ldl', [pt(1.6, '2026-01-01')])).goalState).toBe('near')
-  })
 })
 
 describe('evaluateLabMarker — Lp(a) unit-match (mg/dL vs nmol/L, assay-dependent)', () => {
@@ -100,10 +89,16 @@ describe('evaluateLabMarker — Lp(a) unit-match (mg/dL vs nmol/L, assay-depende
 })
 
 describe('evaluateLabMarker — "higher" direction (HDL) and "range" direction (HbA1c)', () => {
-  it('HDL: at-goal >=1.0, near in [0.9,1.0), off-goal <0.9', () => {
+  it('HDL: at-goal >=1.0, near in [0.9,1.0), off-goal <0.9 — including the exact float boundary', () => {
     expect(evaluateLabMarker(trend('hdl', [pt(1.2, 'a')])).goalState).toBe('at-goal')
     expect(evaluateLabMarker(trend('hdl', [pt(0.95, 'a')])).goalState).toBe('near')
     expect(evaluateLabMarker(trend('hdl', [pt(0.7, 'a')])).goalState).toBe('off-goal')
+    // Symmetric case to the LDL boundary above: HDL is "higher" direction,
+    // target=1.0, nearBuffer=0.1 -> near-band floor = 1.0-0.1. That
+    // particular subtraction happens to be float-exact (0.9 !== 0.8999...),
+    // so this wasn't independently broken — it's a regression check that
+    // BOUNDARY_EPS doesn't shift an already-correct boundary the wrong way.
+    expect(evaluateLabMarker(trend('hdl', [pt(0.9, 'a')])).goalState).toBe('near')
   })
   it('HbA1c range: at-goal <=5.7, near (5.7,6.4], off-goal >6.4', () => {
     expect(evaluateLabMarker(trend('hba1c', [pt(5.5, 'a', '%')])).goalState).toBe('at-goal')

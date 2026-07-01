@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { HeartPulse, Moon, Sun, Activity, Sparkles, Compass, TestTube } from 'lucide-react'
 import { RANGES, STEMI_DATE, type RangeId } from './thresholds'
+import { useIsClient } from '@/lib/hooks/useIsClient'
 
 export type TabId = 'dashboard' | 'correlations' | 'baselines' | 'labs'
 
@@ -23,14 +24,15 @@ function greeting(h: number): string {
 
 export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
   // Theme toggle relies on next-themes mounting state — render the icon only
   // after the client has picked a theme, otherwise we'd hydrate-mismatch.
-  useEffect(() => setMounted(true), [])
+  const mounted = useIsClient()
 
-  const [now, setNow] = useState<Date | null>(null)
-  // Avoid SSR/CSR mismatch on time-of-day text — fix the time client-side only.
-  useEffect(() => setNow(new Date()), [])
+  // Avoid SSR/CSR mismatch on time-of-day text — resolve "now" once, on the
+  // client, after mount. `mounted` flips false->true exactly once, so this
+  // `useMemo` computes `new Date()` exactly once too (then stays frozen for
+  // the component's lifetime — same as the effect-based version it replaces).
+  const now = useMemo(() => (mounted ? new Date() : null), [mounted])
 
   const dateLabel = now
     ? now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })

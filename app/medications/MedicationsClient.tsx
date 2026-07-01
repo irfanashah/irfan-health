@@ -71,7 +71,7 @@ function AdherenceHistory({ adherence, busy, onConfirm, onSkip, onUndo, error }:
           Tracking not yet started — tap below to log today.
           <div style={{ marginTop: 12 }}>
             <button type="button" onClick={onConfirm} disabled={busy} className="meds-btn meds-btn-primary">
-              <CheckCircle2 size={14} /> Took today's meds
+              <CheckCircle2 size={14} /> Took today&apos;s meds
             </button>
           </div>
         </div>
@@ -123,7 +123,7 @@ function AdherenceHistory({ adherence, busy, onConfirm, onSkip, onUndo, error }:
               <>
                 <span className="meds-adh-state meds-adh-state-skipped"><X size={14} /> Skipped today</span>
                 <button type="button" className="meds-btn meds-btn-primary" onClick={onConfirm} disabled={busy}>
-                  <CheckCircle2 size={13} /> Took today's meds
+                  <CheckCircle2 size={13} /> Took today&apos;s meds
                 </button>
                 <button type="button" className="meds-btn meds-btn-ghost" onClick={onUndo} disabled={busy}>
                   <RotateCcw size={13} /> Undo
@@ -132,7 +132,7 @@ function AdherenceHistory({ adherence, busy, onConfirm, onSkip, onUndo, error }:
             ) : (
               <>
                 <button type="button" className="meds-btn meds-btn-primary" onClick={onConfirm} disabled={busy}>
-                  <CheckCircle2 size={14} /> Took today's meds
+                  <CheckCircle2 size={14} /> Took today&apos;s meds
                 </button>
                 {!showSkip ? (
                   <button type="button" className="meds-btn meds-btn-ghost" onClick={() => setShowSkip(true)} disabled={busy}>
