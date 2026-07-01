@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        # Advisory only for now — the repo carries ~50 pre-existing lint
+        # errors from the eslint-config-next 16 / React 19 hooks-purity
+        # rules landing on code written before those rules existed. See
+        # the "Fix pre-existing lint errors" follow-on. Flip this back to
+        # a hard failure once that's cleaned up.
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Test
+        run: npm run test
