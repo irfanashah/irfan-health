@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { saveTokens } from '@/adapters/_lib/token-store'
 import { exchangeCode } from '@/adapters/withings/api'
@@ -6,6 +7,20 @@ import { exchangeCode } from '@/adapters/withings/api'
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  // Session guard (gotcha #155) — same reasoning as the Whoop callback: the
+  // legitimate flow always returns to the same authenticated browser, and
+  // the state-cookie check alone doesn't stop an attacker from completing
+  // the flow with their own Withings account.
+  const supabaseUser = await createServerSupabase()
+  const {
+    data: { user },
+  } = await supabaseUser.auth.getUser()
+  if (!user) {
+    return NextResponse.redirect(
+      new URL('/login?error=unauthorised', process.env.NEXT_PUBLIC_APP_URL!)
+    )
+  }
+
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')

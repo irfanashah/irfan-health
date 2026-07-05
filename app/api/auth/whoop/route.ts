@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'node:crypto'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -16,6 +17,22 @@ const SCOPES = [
 ].join(' ')
 
 export async function GET(): Promise<NextResponse> {
+  // Session guard (gotcha #155) — middleware.ts deliberately exempts every
+  // /api/* path (so OAuth callbacks don't lose their `code` param), which
+  // means this route must self-enforce auth or anyone who knows the app URL
+  // can complete the OAuth flow with THEIR OWN Whoop account. saveTokens()
+  // in the callback is service-role + one row per provider, so that would
+  // silently overwrite Irfan's stored tokens. The CSRF `state` cookie below
+  // is defence-in-depth only — it does NOT stop this, since an attacker's
+  // own browser sets and satisfies it just fine.
+  const supabaseUser = await createServerSupabase()
+  const {
+    data: { user },
+  } = await supabaseUser.auth.getUser()
+  if (!user) {
+    return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_APP_URL!))
+  }
+
   // Whoop requires the state parameter for CSRF protection.
   // Store it in a short-lived httpOnly cookie and verify it in the callback.
   const state = randomBytes(32).toString('hex')

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServerSupabase } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { saveTokens } from '@/adapters/_lib/token-store'
 
@@ -7,6 +8,22 @@ export const runtime = 'nodejs'
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  // Session guard (gotcha #155) — the legitimate flow always returns to the
+  // SAME authenticated browser that started it at /api/auth/whoop (the
+  // session cookie is present), so this is not just symmetric hardening —
+  // it's the actual fix. The state-cookie check below stays as defence in
+  // depth, but on its own it does nothing to stop an attacker completing
+  // the flow with their own Whoop account and overwriting Irfan's tokens.
+  const supabaseUser = await createServerSupabase()
+  const {
+    data: { user },
+  } = await supabaseUser.auth.getUser()
+  if (!user) {
+    return NextResponse.redirect(
+      new URL('/login?error=unauthorised', process.env.NEXT_PUBLIC_APP_URL!)
+    )
+  }
+
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const state = searchParams.get('state')

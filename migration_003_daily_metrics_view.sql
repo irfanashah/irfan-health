@@ -372,14 +372,27 @@ meals_daily AS (
     --
     -- GREATEST(0, …) belt-and-braces — if a future edge case still
     -- slips a negative through (e.g. a single meal eaten exactly at the
-    -- onset boundary with timezone rounding), clamp at zero. Null when
-    -- either side missing remains null.
-    GREATEST(
-      0,
-      EXTRACT(EPOCH FROM (
-        MAX(sleep_onset) - MAX(eaten_at) FILTER (WHERE eaten_at <= sleep_onset)
-      )) / 60.0
-    ) AS last_meal_to_sleep_min
+    -- onset boundary with timezone rounding), clamp at zero.
+    --
+    -- Explicit NULL guard (fixes a regression the GREATEST(0,…) clamp
+    -- itself introduced): Postgres GREATEST() ignores NULL arguments —
+    -- GREATEST(0, NULL) = 0, not NULL. Without the CASE below, EVERY
+    -- current day (no next-night sleep recorded yet) and any no-sleep
+    -- night silently computed to 0 ("meal eaten at the exact moment of
+    -- sleep onset") instead of NULL, feeding a fabricated zero into the
+    -- correlation engine as a real covariate reading (gotcha #154). Null
+    -- when either side is genuinely missing remains null.
+    CASE
+      WHEN MAX(sleep_onset) IS NULL
+        OR MAX(eaten_at) FILTER (WHERE eaten_at <= sleep_onset) IS NULL
+      THEN NULL
+      ELSE GREATEST(
+        0,
+        EXTRACT(EPOCH FROM (
+          MAX(sleep_onset) - MAX(eaten_at) FILTER (WHERE eaten_at <= sleep_onset)
+        )) / 60.0
+      )
+    END AS last_meal_to_sleep_min
   FROM meals_enriched
   GROUP BY eaten_day
 )

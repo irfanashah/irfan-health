@@ -43,7 +43,7 @@ const SOURCE_LABEL: Record<DriftMetricId, string> = {
 // ─── Public types ──────────────────────────────────────────────────────────
 
 export type DesignState =
-  | 'safety'        // clinical-low breach — overrides tier
+  | 'safety'        // clinical-low breach — outranks tier, establishing, AND suppression
   | 'drift'         // tier=drift OR watch OR caution-low — renders in "Worth a look"
   | 'improvement'   // tier=win
   | 'steady'        // tier=stable (active) OR suppressed-and-quiet
@@ -256,13 +256,17 @@ function buildLead(
 
 // ─── Per-signal build ──────────────────────────────────────────────────────
 
-interface PerSignalInput {
+export interface PerSignalInput {
   verdict: DriftVerdict
   rows: MetricDriftRow[]
   daysBack: number
 }
 
-function buildSignal({ verdict, rows, daysBack }: PerSignalInput): DesignSignal {
+// Exported (was private) so the breach-outranks-establishing/suppression
+// invariant is directly unit-testable without threading a full
+// DriftVerdict[] + Record<metric, MetricDriftRow[]> through
+// buildDriftPanelData just to isolate one metric's state remap.
+export function buildSignal({ verdict, rows, daysBack }: PerSignalInput): DesignSignal {
   const cfg = DRIFT_CONFIG[verdict.metric]
   const fmt = makeFmt(cfg.unit)
   const latestRow = verdict.latest
@@ -286,21 +290,26 @@ function buildSignal({ verdict, rows, daysBack }: PerSignalInput): DesignSignal 
     : null
   const magWord: MagWord = magWordFromZ(latestRow ? latestRow.short_vs_prior_z : null)
 
-  // State remap. The order matters: breach overrides any tier; caution
-  // overrides win/stable; suppression overrides drift/watch (never silently
-  // upgraded above steady).
+  // State remap. The order matters: breach outranks EVERYTHING — including
+  // establishing and alert suppression (gotcha #153) — because a hard
+  // clinical-floor breach must never be hidden behind "still settling in"
+  // or a suppressed context period. Below breach: caution overrides
+  // win/stable; suppression overrides drift/watch/win (never silently
+  // upgraded above steady) but NEVER overrides a breach.
   let state: DesignState
   let early = false
   let caution = false
   const paused = verdict.alertsSuppressed
 
-  if (verdict.state === 'no-recent-data') {
+  if (verdict.clinicalLow === 'breach') {
+    // Unconditional — no `paused` demotion. `no-recent-data` can never
+    // reach here true: evaluate.ts hardcodes clinicalLow='normal' on that
+    // branch, so this only fires from a real `establishing`/`active` value.
+    state = 'safety'
+  } else if (verdict.state === 'no-recent-data') {
     state = 'nodata'
   } else if (verdict.state === 'establishing') {
     state = 'settling'
-  } else if (verdict.clinicalLow === 'breach') {
-    // Clinical-low precedence — breach always wins over Win/Drift/anything else.
-    state = paused ? 'steady' : 'safety'
   } else if (verdict.clinicalLow === 'caution') {
     // Approaching the low floor. Surface as Worth-a-look with a distinct lead,
     // unless suppressed (then quiet in steady — never silently fake-stable but
