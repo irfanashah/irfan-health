@@ -185,6 +185,53 @@ export async function fetchCgm24h(): Promise<CgmPoint[]> {
 
 // ─── Latest KPI values ─────────────────────────────────────────────────────
 
+/**
+ * How stale a CGM reading can be before it stops counting as "live" (gotcha
+ * #156 — the H6 fix). Nightscout/xDrip+ uploads roughly every 5 minutes, so
+ * 30 minutes is ~6 missed cycles — generous enough that one or two dropped
+ * uploads don't flip the KPI to stale, but tight enough that a multi-hour
+ * sensor gap gets caught. PROVISIONAL — tune once real dropout patterns are
+ * visible.
+ */
+export const CGM_STALE_MINUTES = 30
+
+/**
+ * Pure — given the last CGM reading's timestamp and "now", decides whether
+ * it's still live. `now` is a parameter (not `Date.now()` internally) so
+ * this is deterministically unit-testable. Returns `ageMin` unconditionally
+ * (not just a boolean) so callers can render "last reading Xh ago" text
+ * without recomputing the age themselves.
+ */
+export function computeCgmFreshness(
+  lastTimeIso: string,
+  now: number
+): { stale: boolean; ageMin: number } {
+  const ageMin = (now - new Date(lastTimeIso).getTime()) / 60000
+  return { stale: ageMin > CGM_STALE_MINUTES, ageMin }
+}
+
+/**
+ * TIR coverage gate (also gotcha #156 — the H6 fix). The 24h donut assumes
+ * a full day of wear; a sensor only worn a few hours (fresh insert, long
+ * dropout earlier in the day) produces a technically-accurate but
+ * misleading "full day" TIR from a handful of readings. `TIR_MIN_WEAR_HOURS`
+ * is provisional, set to half the 24h window. `CGM_EXPECTED_INTERVAL_MIN`
+ * assumes Nightscout/xDrip+'s ~5-minute upload cadence to translate a raw
+ * reading count into an implied wear time — a proxy, not a measured span.
+ */
+export const TIR_MIN_WEAR_HOURS = 12
+export const CGM_EXPECTED_INTERVAL_MIN = 5
+
+/**
+ * Pure — estimates hours of CGM wear implied by a 24h reading count, and
+ * whether that's enough to trust the TIR donut as representing the full
+ * window rather than a partial slice of it.
+ */
+export function computeCgmWear(pointsCount: number): { wearHours: number; partial: boolean } {
+  const wearHours = (pointsCount * CGM_EXPECTED_INTERVAL_MIN) / 60
+  return { wearHours, partial: wearHours < TIR_MIN_WEAR_HOURS }
+}
+
 export interface LatestKpis {
   weight: { value: number; at: string } | null
   bp: { sys: number; dia: number; pulse: number | null; at: string } | null
@@ -193,7 +240,13 @@ export interface LatestKpis {
   rhr: { value: number; at: string } | null
   strain: { value: number; at: string } | null
   sleep: { total: number; performance: number | null; at: string } | null
-  cgm: { value: number; at: string; trendDir: 'rising' | 'falling' | 'flat'; slope: number } | null
+  /**
+   * `stale`/`ageMin` are computed unconditionally whenever ANY reading
+   * exists in the 24h window (never nulled out for staleness — gotcha
+   * #156) so panels choose their own wording ("CGM · live" vs "last
+   * reading Xh ago") from one shared decision instead of re-deriving it.
+   */
+  cgm: { value: number; at: string; trendDir: 'rising' | 'falling' | 'flat'; slope: number; stale: boolean; ageMin: number } | null
   /**
    * Most recent overnight Oxylink night — avg, min, ODI (3% threshold,
    * screening-grade), time-below-90%, and the SpO2 distribution
@@ -307,7 +360,8 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
     let trendDir: 'rising' | 'falling' | 'flat' = 'flat'
     if (slope > 0.18) trendDir = 'rising'
     else if (slope < -0.18) trendDir = 'falling'
-    cgm = { value: last.mmol, at: last.time, trendDir, slope }
+    const { stale, ageMin } = computeCgmFreshness(last.time, Date.now())
+    cgm = { value: last.mmol, at: last.time, trendDir, slope, stale, ageMin }
   }
 
   // Latest overnight SpO2 — pulls the two rows from the most recent night

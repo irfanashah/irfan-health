@@ -55,10 +55,16 @@ export async function updateIngestionLog(
 }
 
 /**
- * Returns the fetch_window_end of the most recent successful run for a source,
- * or null if no successful run exists (first run / backfill).
+ * Returns the fetch_window_end of the most recent run that COVERED its
+ * window for a source, or null if none exists (first run / backfill).
+ * "Covered" = 'success' or 'partial' — a partial run still fetched and
+ * wrote the window, it just had one or more bad rows; only 'error' (total
+ * failure, nothing written) should hold the frontier back. Matching
+ * 'partial' too is the H3 fix (backlog / gotcha #158) — previously this
+ * matched 'success' only, so one permanently-failing record pinned the
+ * frontier while `now` kept advancing, growing the window unbounded.
  */
-export async function getLastSuccessfulWindowEnd(
+export async function getLastCoveredWindowEnd(
   supabase: SupabaseClient,
   sourceSlug: string
 ): Promise<Date | null> {
@@ -66,7 +72,7 @@ export async function getLastSuccessfulWindowEnd(
     .from('ingestion_log')
     .select('fetch_window_end')
     .eq('source_slug', sourceSlug)
-    .eq('status', 'success')
+    .in('status', ['success', 'partial'])
     .order('fetch_window_end', { ascending: false })
     .limit(1)
     .maybeSingle()

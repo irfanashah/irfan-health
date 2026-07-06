@@ -7,9 +7,16 @@
 //     staleness is normal, not a failure.
 //   - episodic sources (manual, labs) — no cron, no expected cadence.
 //
-// Signal: age of the latest `status='success'` row, NOT error-row
-// scanning. Last-success-age catches BOTH "cron didn't run" and "cron
-// ran but failed (no new success)" in one robust number.
+// Signal: age of the latest COVERED row ('success' or 'partial'), NOT
+// error-row scanning. "Covered" matches the frontier's own definition
+// (adapters/_lib/ingestion-log.ts's getLastCoveredWindowEnd, gotcha #158)
+// — a partial run still fetched and wrote its window, it just had a bad
+// row. Before this matched 'success' only: a single recurring bad row
+// made this signal say "stale" every day for the full LOOKBACK duration
+// even though ingestion was working fine, a false-positive alert storm
+// that also risked masking a real staleness underneath it. Last-covered-
+// age still catches BOTH "cron didn't run" and "cron ran but failed
+// outright (no success or partial)" in one robust number.
 //
 // Thresholds are provisional (≈ 2–3× the cron interval + buffer):
 //   - whoop:     cron every 6h  → 18h  (3 missed runs)
@@ -35,16 +42,16 @@ export const MONITORED_SOURCES: readonly MonitoredSource[] = [
 export interface PipelineHealthRow {
   slug: string
   label: string
-  /** Most recent success timestamp — prefer completed_at, fall back to triggered_at. Null when no success row exists. */
+  /** Most recent covered-run ('success'|'partial') timestamp — prefer completed_at, fall back to triggered_at. Null when no covered run exists. */
   lastSuccessAt: string | null
-  /** Hours since lastSuccessAt; null when no success row exists. */
+  /** Hours since lastSuccessAt; null when no covered run exists. */
   ageHours: number | null
-  /** True when ageHours > staleHours OR no success row exists at all. */
+  /** True when ageHours > staleHours OR no covered run exists at all. */
   stale: boolean
   staleHours: number
 }
 
-/** Per monitored source, the latest-success row + age + stale flag. */
+/** Per monitored source, the latest-covered row + age + stale flag. */
 export async function fetchPipelineHealth(): Promise<PipelineHealthRow[]> {
   const supabase = createServiceClient()
   const now = Date.now()
@@ -55,7 +62,7 @@ export async function fetchPipelineHealth(): Promise<PipelineHealthRow[]> {
       .from('ingestion_log')
       .select('triggered_at, completed_at')
       .eq('source_slug', src.slug)
-      .eq('status', 'success')
+      .in('status', ['success', 'partial'])
       .order('completed_at', { ascending: false, nullsFirst: false })
       .limit(1)
     if (error) {

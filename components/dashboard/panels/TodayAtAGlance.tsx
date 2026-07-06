@@ -58,10 +58,13 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays, fingers
   // useful when CGM is stale and only fingersticks are populated.
   const fingersticksNewestFirst = [...fingersticks].reverse()
   const latestFingerstick = fingersticksNewestFirst[0] ?? null
-  const cgmLive = latest.cgm !== null
-  const glucoseValueMmol = cgmLive ? latest.cgm!.value : latestFingerstick?.mmol ?? null
+  // Live = a reading exists AND it isn't stale (gotcha #156 — H6). A stale
+  // reading falls through to the fingerstick fallback below exactly like
+  // "no CGM rows" always did — same branches, wider trigger condition.
+  const cgmIsLive = latest.cgm !== null && !latest.cgm.stale
+  const glucoseValueMmol = cgmIsLive ? latest.cgm!.value : latestFingerstick?.mmol ?? null
   const glucoseStatus = st.glucose(glucoseValueMmol)
-  const glucoseValue = cgmLive && latest.cgm
+  const glucoseValue = cgmIsLive && latest.cgm
     ? (
         <span className="kpi-glucose">
           {toG(latest.cgm.value)}
@@ -73,7 +76,7 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays, fingers
     : latestFingerstick
       ? toG(latestFingerstick.mmol)
       : '—'
-  const glucoseSub = cgmLive
+  const glucoseSub = cgmIsLive
     ? 'CGM · live'
     : latestFingerstick
       ? `${fmtAgo(latestFingerstick.time)} · ${FINGERSTICK_SOURCE_LABEL[latestFingerstick.source] ?? latestFingerstick.source}`
@@ -81,7 +84,7 @@ export function TodayAtAGlance({ series, latest, glucoseUnit, rangeDays, fingers
   // Sparkline: in fallback, draw the recent fingerstick trail so the tile
   // still says something at a glance. CGM-live path stays empty (the big
   // 24h chart is the place for that trend).
-  const glucoseSpark: number[] = cgmLive
+  const glucoseSpark: number[] = cgmIsLive
     ? []
     : fingersticks.map((fs) => toG(fs.mmol))
 

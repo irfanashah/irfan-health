@@ -6,7 +6,7 @@ import { PanelHeader } from '../ui/PanelHeader'
 import { CGMChart, type CgmMarker } from '../charts/CGMChart'
 import { Donut } from '../charts/Donut'
 import { GLUCOSE_HI, GLUCOSE_LO, MMOL_TO_MGDL, STATUS_COLOR, st } from '../thresholds'
-import type { CgmPoint, LatestKpis, FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
+import { computeCgmWear, type CgmPoint, type LatestKpis, type FingerstickPoint } from '@/app/lib/dashboard/daily-metrics'
 import { useIsClient } from '@/lib/hooks/useIsClient'
 
 /** Slim meal-marker shape — what the page passes from `meals` rows. */
@@ -133,7 +133,11 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
     above: total > 0 ? Math.round((counts.above / total) * 100) : 0,
   }
 
-  const cgmLive = latest.cgm !== null
+  // Live = a reading exists AND it isn't stale (gotcha #156 — H6). A stale
+  // reading falls through to the fingerstick fallback below exactly like
+  // "no CGM rows" always did — same branches, wider trigger condition.
+  const cgmIsLive = latest.cgm !== null && !latest.cgm.stale
+  const { wearHours, partial: tirPartial } = computeCgmWear(cgm24h.length)
   const arrow = latest.cgm
     ? latest.cgm.trendDir === 'rising'
       ? <ArrowUp size={22} />
@@ -147,7 +151,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       <PanelHeader
         icon={<Droplet size={18} />}
         title="Glucose"
-        source={cgmLive ? 'nightscout' : latestFingerstick ? 'manual' : 'nightscout'}
+        source={cgmIsLive ? 'nightscout' : latestFingerstick ? 'manual' : 'nightscout'}
         accent="var(--purple)"
         right={
           <div className="seg unit-seg">
@@ -160,7 +164,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       {/* ─── Headline + TIR/placeholder row ───────────────────────────── */}
       <div className="glucose-top">
         <div className="glucose-now">
-          {cgmLive && latest.cgm ? (
+          {cgmIsLive && latest.cgm ? (
             <>
               <div className="g-now-val" style={{ color: STATUS_COLOR[st.glucose(latest.cgm.value)] }}>
                 {toG(latest.cgm.value)}
@@ -194,7 +198,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
           )}
         </div>
 
-        {cgmLive && total > 0 ? (
+        {cgmIsLive && total > 0 ? (
           <div className="glucose-tir">
             <Donut
               size={132}
@@ -205,7 +209,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
                 { value: tir.below, color: 'var(--red)' },
               ]}
               centerLabel={`${tir.inRange}%`}
-              centerSub="in range (24h)"
+              centerSub={tirPartial ? `partial (${Math.round(wearHours)}h wear)` : 'in range (24h)'}
             />
             <div className="tir-legend">
               <div className="tir-row"><span className="tir-dot" style={{ background: 'var(--amber)' }} />Above {toG(GLUCOSE_HI)}<b>{tir.above}%</b></div>
@@ -224,7 +228,7 @@ export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks 
       </div>
 
       {/* ─── Chart area: CGM trace (with fingerstick overlay) OR fallback list ── */}
-      {cgmLive ? (
+      {cgmIsLive ? (
         <>
           <div className="chart-caption">
             <span>Last 24 hours</span>

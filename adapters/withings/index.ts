@@ -3,8 +3,9 @@ import type { Adapter, AdapterConfig, IngestionResult } from '../_lib/types'
 import {
   createIngestionLog,
   updateIngestionLog,
-  getLastSuccessfulWindowEnd,
+  getLastCoveredWindowEnd,
 } from '../_lib/ingestion-log'
+import { computeIngestWindow, INGEST_WINDOW_CONFIG } from '../_lib/ingestion-window'
 import { getTokens } from '../_lib/token-store'
 import {
   ensureFreshToken,
@@ -103,16 +104,25 @@ export const withingsAdapter: Adapter = {
     let recordsWritten = 0
     let recordsSkipped = 0
 
-    // 1. Resolve window
-    const windowEnd = toDate ?? new Date()
+    // 1. Resolve window. Cron path (no fromDate/toDate): frontier-based,
+    // widened lookback + capped (H1 + H3, gotcha #157/#158). Explicit-date
+    // path (refill/backfill) bypasses the frontier entirely, same as before.
     let windowStart: Date
+    let windowEnd: Date
     if (fromDate) {
       windowStart = fromDate
+      windowEnd = toDate ?? new Date()
     } else {
-      const lastEnd = await getLastSuccessfulWindowEnd(supabase, SOURCE_SLUG)
-      windowStart = lastEnd
-        ? new Date(lastEnd.getTime() - 24 * 60 * 60 * 1000)
-        : BACKFILL_START_DATE
+      const lastEnd = await getLastCoveredWindowEnd(supabase, SOURCE_SLUG)
+      const win = computeIngestWindow(
+        lastEnd,
+        Date.now(),
+        INGEST_WINDOW_CONFIG.withings.lookbackMs,
+        INGEST_WINDOW_CONFIG.withings.maxLookbackMs,
+        BACKFILL_START_DATE
+      )
+      windowStart = win.windowStart
+      windowEnd = win.windowEnd
     }
 
     // 2. Create ingestion_log row

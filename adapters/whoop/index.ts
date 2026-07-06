@@ -4,8 +4,9 @@ import { normaliseUnit } from '../_lib/normalise'
 import {
   createIngestionLog,
   updateIngestionLog,
-  getLastSuccessfulWindowEnd,
+  getLastCoveredWindowEnd,
 } from '../_lib/ingestion-log'
+import { computeIngestWindow, INGEST_WINDOW_CONFIG } from '../_lib/ingestion-window'
 import { getTokens } from '../_lib/token-store'
 import {
   ensureFreshToken,
@@ -24,6 +25,16 @@ const BACKFILL_START_DATE = new Date('2026-04-15T00:00:00.000Z')
 
 const SOURCE_SLUG = 'whoop'
 
+// Widen the cycles fetch backwards by 14 days — some recoveries inside our
+// requested window link to cycles whose start fell just before `windowStart`
+// (cycle ends ~midnight, recovery is scored the next morning). Without the
+// buffer, those recoveries can't find their cycle in cycleMap and get
+// silently dropped (gotcha #18). We still only emit strain_score rows for
+// cycles whose start is inside the requested window (see 5a below).
+// Mirrors /api/refill/whoop's CYCLE_BUFFER_MS exactly — the cron adapter had
+// been missing this fix that the refill route already carried (gotcha #25).
+const CYCLE_BUFFER_MS = 14 * 24 * 60 * 60 * 1000
+
 export const whoopAdapter: Adapter = {
   sourceSlug: SOURCE_SLUG,
 
@@ -34,18 +45,25 @@ export const whoopAdapter: Adapter = {
     let recordsWritten = 0
     let recordsSkipped = 0
 
-    // 1. Resolve fetch window
-    const windowEnd = toDate ?? new Date()
-
+    // 1. Resolve fetch window. Cron path (no fromDate/toDate): frontier-based,
+    // widened lookback + capped (H1 + H3, gotcha #157/#158). Explicit-date
+    // path (refill/backfill) bypasses the frontier entirely, same as before.
     let windowStart: Date
+    let windowEnd: Date
     if (fromDate) {
       windowStart = fromDate
+      windowEnd = toDate ?? new Date()
     } else {
-      const lastEnd = await getLastSuccessfulWindowEnd(supabase, SOURCE_SLUG)
-      // Overlap by 1 day to catch late-arriving Whoop data
-      windowStart = lastEnd
-        ? new Date(lastEnd.getTime() - 24 * 60 * 60 * 1000)
-        : BACKFILL_START_DATE
+      const lastEnd = await getLastCoveredWindowEnd(supabase, SOURCE_SLUG)
+      const win = computeIngestWindow(
+        lastEnd,
+        Date.now(),
+        INGEST_WINDOW_CONFIG.whoop.lookbackMs,
+        INGEST_WINDOW_CONFIG.whoop.maxLookbackMs,
+        BACKFILL_START_DATE
+      )
+      windowStart = win.windowStart
+      windowEnd = win.windowEnd
     }
 
     // 2. Create ingestion_log row
@@ -80,9 +98,13 @@ export const whoopAdapter: Adapter = {
       const tokens = await ensureFreshToken(supabase, storedTokens)
       const { accessToken } = tokens
 
-      // 4. Fetch from Whoop
+      // 4. Fetch from Whoop. Cycles are fetched over a WIDER window (buffered
+      // 14 days backwards) than recoveries/sleep so a recovery linking to a
+      // cycle that started just before `windowStart` can still find it in
+      // cycleMap (gotcha #18) — mirrors /api/refill/whoop (gotcha #25).
+      const cycleFetchFrom = new Date(windowStart.getTime() - CYCLE_BUFFER_MS)
       const [cycles, recoveries, sleepSessions] = await Promise.all([
-        fetchCycles(accessToken, windowStart, windowEnd),
+        fetchCycles(accessToken, cycleFetchFrom, windowEnd),
         fetchRecoveries(accessToken, windowStart, windowEnd),
         fetchSleepSessions(accessToken, windowStart, windowEnd),
       ])
@@ -104,6 +126,11 @@ export const whoopAdapter: Adapter = {
         // chk_obs_time_coverage. The next cron run picks them up once Whoop
         // finalises them.
         if (!cycle.start || !cycle.end) continue
+        // Skip cycles that only exist in `cycles` because of the 14-day
+        // buffer above — they're here purely so recoveries in-window can
+        // resolve their period via cycleMap; emitting strain_score for them
+        // would pollute pre-window data (mirrors /api/refill/whoop exactly).
+        if (new Date(cycle.start).getTime() < windowStart.getTime()) continue
 
         const period_start = cycle.start
         const period_end = cycle.end

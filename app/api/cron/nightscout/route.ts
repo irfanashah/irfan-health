@@ -5,14 +5,6 @@ import { nightscoutAdapter } from '@/adapters/nightscout'
 export const runtime = 'nodejs'
 export const maxDuration = 800
 
-/**
- * 48-hour rolling window — the cron runs every 12 h (`0 *\/12 * * *`), so a
- * 48 h pull gives ~4 cycles of overlap. Dedup makes the overlap free, and
- * the buffer is resilient to one or two missed cron firings. Full-history
- * reconciliation is the refill route's job, not the cron's.
- */
-const CRON_WINDOW_MS = 48 * 60 * 60 * 1000
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Bearer-token auth — Vercel cron sends Authorization: Bearer ${CRON_SECRET}.
   const authHeader = request.headers.get('authorization')
@@ -23,14 +15,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const supabase = createServiceClient()
-  const toDate = new Date()
-  const fromDate = new Date(toDate.getTime() - CRON_WINDOW_MS)
 
-  const result = await nightscoutAdapter.fetchAndIngest({
-    supabase,
-    fromDate,
-    toDate,
-  })
+  // No explicit fromDate/toDate — let the adapter's own frontier logic
+  // resolve the window (H1 + H3 fix, gotcha #157/#158). Previously this
+  // route always passed a fixed 48h window, which bypassed the adapter's
+  // frontier fallback entirely and had the same "advances past not-yet-
+  // synced data" exposure as Whoop/Withings had before their fix — just
+  // wider (>48h outage) since the window never adapted to actual coverage.
+  const result = await nightscoutAdapter.fetchAndIngest({ supabase })
 
   // Episodic: an empty window between sensor stints is success, NOT error.
   // The adapter already returns status='success' with recordsFound=0 in

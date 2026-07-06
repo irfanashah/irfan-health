@@ -3,8 +3,9 @@ import type { Adapter, AdapterConfig, IngestionResult } from '../_lib/types'
 import {
   createIngestionLog,
   updateIngestionLog,
-  getLastSuccessfulWindowEnd,
+  getLastCoveredWindowEnd,
 } from '../_lib/ingestion-log'
+import { computeIngestWindow, INGEST_WINDOW_CONFIG } from '../_lib/ingestion-window'
 import { mgdlToMmol } from '@/app/log/_lib/glucose'
 import { getEntries, type NightscoutEntry } from './api'
 
@@ -91,17 +92,27 @@ export const nightscoutAdapter: Adapter = {
   async fetchAndIngest(config: AdapterConfig): Promise<IngestionResult> {
     const { supabase, fromDate, toDate } = config
 
-    // 1. Resolve fetch window. Caller-supplied dates win; otherwise pick up
-    //    from the last successful run with a 1-day overlap.
-    const windowEnd = toDate ?? new Date()
+    // 1. Resolve fetch window. Caller-supplied dates win (refill/backfill);
+    // otherwise frontier-based, widened lookback + capped (H1 + H3, gotcha
+    // #157/#158) — the cron route no longer passes explicit dates, so this
+    // is now the live path for the cron too (previously bypassed, see the
+    // route's own history).
     let windowStart: Date
+    let windowEnd: Date
     if (fromDate) {
       windowStart = fromDate
+      windowEnd = toDate ?? new Date()
     } else {
-      const lastEnd = await getLastSuccessfulWindowEnd(supabase, SOURCE_SLUG)
-      windowStart = lastEnd
-        ? new Date(lastEnd.getTime() - 24 * 60 * 60 * 1000)
-        : BACKFILL_START_DATE
+      const lastEnd = await getLastCoveredWindowEnd(supabase, SOURCE_SLUG)
+      const win = computeIngestWindow(
+        lastEnd,
+        Date.now(),
+        INGEST_WINDOW_CONFIG.nightscout.lookbackMs,
+        INGEST_WINDOW_CONFIG.nightscout.maxLookbackMs,
+        BACKFILL_START_DATE
+      )
+      windowStart = win.windowStart
+      windowEnd = win.windowEnd
     }
 
     // 2. Open ingestion_log
