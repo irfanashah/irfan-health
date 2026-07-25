@@ -188,3 +188,7 @@
   .labs-panel-fields { grid-template-columns: 1fr; }
   .labs-table input, .labs-table select { max-width: 100px; }
 }
+@media (max-width: 480px) {
+  .labs-page { padding: 16px 13px 36px; }
+  .labs-card { padding: 16px 14px; }
+}

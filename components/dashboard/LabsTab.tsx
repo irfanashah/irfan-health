@@ -157,6 +157,7 @@ function PanelsCard({ panels }: { panels: LabPanelRow[] }) {
                       <div className="labs-tab-panel-meta">Ordered by {p.ordering_physician}</div>
                     )}
                     {p.notes && <div className="labs-tab-panel-meta">{p.notes}</div>}
+                    <div className="labs-tab-values-wrap">
                     <table className="labs-tab-values">
                       <thead>
                         <tr>
@@ -218,6 +219,7 @@ function PanelsCard({ panels }: { panels: LabPanelRow[] }) {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </li>

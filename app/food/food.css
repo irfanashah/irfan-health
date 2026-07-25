@@ -66,9 +66,12 @@
 .food-icon-btn:hover { color: var(--destructive); border-color: color-mix(in srgb, var(--destructive) 40%, transparent); }
 
 .food-totals { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
-.food-total { display: flex; flex-direction: column; gap: 3px; }
+.food-total { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .food-total span { font-size: 10px; font-weight: 700; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.04em; }
-.food-total input { background: var(--background); border: 1px solid var(--border); border-radius: 4px; padding: 6px 7px; font-size: 12.5px; color: var(--foreground); text-align: right; font-variant-numeric: tabular-nums; }
+/* width:100% + min-width:0 so the number input follows its grid track and
+   can't force the column wider than its share (a bare <input> carries an
+   intrinsic ~size:20 min-width that otherwise bursts a fluid grid — gotcha #160). */
+.food-total input { width: 100%; min-width: 0; background: var(--background); border: 1px solid var(--border); border-radius: 4px; padding: 6px 7px; font-size: 12.5px; color: var(--foreground); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Today summary */
 .food-summary { display: flex; flex-wrap: wrap; gap: 18px; padding-top: 4px; }
@@ -94,7 +97,26 @@
 @media (max-width: 900px) {
   .food-form { grid-template-columns: 1fr; }
   .food-totals { grid-template-columns: repeat(3, 1fr); }
-  .food-item { grid-template-columns: minmax(0, 1fr); }
+  /* Item row: name full-width on top, then qty + 7 macros as a 2-col grid
+     (each input keeps its placeholder label so the compact grid stays
+     legible), remove button full-width at the end. Beats the old
+     single-column stack of 10 tall inputs (gotcha #160). */
+  .food-item {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
   .food-item input { width: 100%; }
-  .food-edit { grid-template-columns: 1fr; }
+  .food-item-name { grid-column: 1 / -1; }
+  .food-item .food-icon-btn { grid-column: 1 / -1; justify-self: end; }
+  /* Edit row: same idea — datetime + description span the full width,
+     the three macro number inputs sit in a row, actions span full. */
+  .food-edit { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .food-edit > input[type="datetime-local"],
+  .food-edit > input[type="text"],
+  .food-edit > select { grid-column: 1 / -1; }
+  .food-edit > .food-btn { grid-column: span 1; }
+}
+@media (max-width: 480px) {
+  .food-card { padding: 14px 13px; }
+  .food-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

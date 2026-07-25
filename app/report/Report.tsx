@@ -302,6 +302,7 @@ export function Report(props: Props) {
             <p className="report-empty">No cardiac key-marker labs imported yet.</p>
           ) : (
             <>
+              <div className="report-table-wrap">
               <table className="report-table">
                 <thead>
                   <tr>
@@ -379,6 +380,7 @@ export function Report(props: Props) {
                   })}
                 </tbody>
               </table>
+              </div>
               <p className="report-footnote-inline">{LAB_TARGET_PROVISIONAL_NOTE}</p>
             </>
           )}
@@ -568,6 +570,7 @@ export function Report(props: Props) {
         {fingersticks.length > 0 && (
           <>
             <h3 className="report-h3">Recent fingersticks ({fingersticks.length})</h3>
+            <div className="report-table-wrap">
             <table className="report-table report-table-compact">
               <thead>
                 <tr><th>Date / time</th><th>Value</th><th>Meal</th><th>Source</th></tr>
@@ -583,6 +586,7 @@ export function Report(props: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           </>
         )}
       </section>
@@ -699,6 +703,7 @@ export function Report(props: Props) {
                   {p.lab_name && <span className="report-panel-lab"> · {p.lab_name}</span>}
                   {p.ordering_physician && <span className="report-panel-md"> · {p.ordering_physician}</span>}
                 </div>
+                <div className="report-table-wrap">
                 <table className="report-table report-table-compact">
                   <thead>
                     <tr>
@@ -730,6 +735,7 @@ export function Report(props: Props) {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             ))}
           </div>

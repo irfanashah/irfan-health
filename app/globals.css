@@ -130,4 +130,15 @@
   html {
     @apply font-sans;
   }
+  /* Mobile overflow safety net (gotcha #160): clip stray horizontal
+     overflow at the document root so one mis-sized child can't scroll the
+     whole page sideways. `clip` (not `hidden`) is deliberate — `hidden`
+     forces overflow-y to `auto`, turning the root into a scroll container
+     and breaking the dashboard's `position: sticky` topbar; `clip` does
+     neither. This is the last line of defence — the real fixes are
+     min-width:0 on flex/grid children + table wrappers + fluid grids. */
+  html,
+  body {
+    overflow-x: clip;
+  }
 }

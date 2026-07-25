@@ -22,7 +22,7 @@ export default async function DiagnosticsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
             href="/"
@@ -34,7 +34,7 @@ export default async function DiagnosticsPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         <section>
           <h2 className="text-base font-semibold text-foreground mb-2">Pipeline health</h2>
           <p className="text-sm text-muted-foreground mb-4">

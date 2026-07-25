@@ -203,6 +203,24 @@
   font-size: 10.5px; color: #777; font-style: italic; line-height: 1.5;
 }
 
+/* ── Screen mobile — phones. Print rules below are untouched. ───── */
+/* Wrapper added around every .report-table (JSX) so a wide clinical table
+   scrolls inside its own box instead of widening the page (gotcha #160).
+   overflow-x on screen only; the print block resets it implicitly since
+   print re-declares .report-table sizing and hides nothing here. */
+.report-table-wrap { overflow-x: auto; }
+
+@media screen and (max-width: 640px) {
+  .report-doc { padding: 14px 12px 36px; }
+  .report-page { padding: 18px 14px; }
+  /* Tile grids collapse to a single column so the 2-up / 3-up number
+     tiles don't force horizontal overflow on a narrow phone. */
+  .report-row { grid-template-columns: 1fr; gap: 12px; }
+  .report-tile-pair { flex-direction: column; gap: 10px; }
+  .report-tile-pair-3 { grid-template-columns: 1fr; gap: 10px; }
+  .report-trend-grid { grid-template-columns: 1fr; }
+}
+
 /* ── Print rules — A4, no app chrome, page breaks per section ──── */
 @media print {
   @page {
@@ -243,4 +261,9 @@
 
   /* Browser link underlines + colour off in print. */
   a, a:visited { color: black; text-decoration: none; }
+
+  /* The screen-only table scroll wrapper must NOT clip in print — there's no
+     scrollbar on paper, so overflow:auto would silently cut wide tables off
+     the page. Reset to visible so the whole table prints (gotcha #160). */
+  .report-table-wrap { overflow: visible; }
 }

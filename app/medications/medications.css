@@ -161,3 +161,15 @@
   .meds-edit-row { grid-template-columns: 1fr 1fr; }
   .meds-adh-stats { grid-template-columns: 1fr; }
 }
+@media (max-width: 480px) {
+  .meds-page { padding: 16px 13px 36px; }
+  .meds-card { padding: 16px 14px; }
+}
+@media (max-width: 460px) {
+  /* Two text inputs per row are cramped on a ~360px phone — stack to one
+     column so each field gets full width (gotcha #160). */
+  .meds-form { grid-template-columns: 1fr; }
+  .meds-edit-row { grid-template-columns: 1fr; }
+  /* The edit row's action buttons (the `auto` last track) go full width
+     when everything stacks, so Save/Cancel stay tappable. */
+}

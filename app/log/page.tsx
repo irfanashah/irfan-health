@@ -20,7 +20,7 @@ export default async function LogPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+      <header className="bg-card border-b border-border px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
             href="/"
