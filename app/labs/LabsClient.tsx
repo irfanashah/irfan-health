@@ -205,18 +205,33 @@ export function LabsClient() {
         setUploadError(res.error)
         return
       }
-      setDraft(res.draft)
-      setRawFileRef(res.rawFileRef)
-      setDrawnAt(res.draft.panel.drawn_at ?? '')
-      setLabName(res.draft.panel.lab_name ?? '')
-      setOrderingPhysician(res.draft.panel.ordering_physician ?? '')
-      setPanelNotes(
-        [
-          res.draft.panel.notes,
-          res.draft.dateAmbiguous ? 'ambiguous date — confirm above' : null,
-        ].filter(Boolean).join(' · ')
-      )
-      setRows(res.draft.values.map(makeReviewRow))
+      // Build the review draft from the extracted payload. Guard the shape
+      // and wrap in try/catch: a malformed draft (missing panel/values, an
+      // unexpected row shape) must surface as a legible inline error, NOT
+      // throw out of this transition — an uncaught throw here propagates to
+      // the app error boundary and blanks the whole page (gotcha #161).
+      try {
+        const draft = res.draft
+        const panel = draft?.panel ?? {}
+        const values = Array.isArray(draft?.values) ? draft.values : []
+        setDraft(draft)
+        setRawFileRef(res.rawFileRef)
+        setDrawnAt(panel.drawn_at ?? '')
+        setLabName(panel.lab_name ?? '')
+        setOrderingPhysician(panel.ordering_physician ?? '')
+        setPanelNotes(
+          [
+            panel.notes,
+            draft?.dateAmbiguous ? 'ambiguous date — confirm above' : null,
+          ].filter(Boolean).join(' · ')
+        )
+        setRows(values.map(makeReviewRow))
+      } catch (err) {
+        setUploadError(
+          `Extraction succeeded but the draft could not be displayed: ${(err as Error).message}. ` +
+          `The PDF is saved — please report this so it can be fixed.`
+        )
+      }
     })
   }
 
