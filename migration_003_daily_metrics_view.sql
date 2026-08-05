@@ -317,19 +317,22 @@ spo2_daily AS (
 ),
 
 -- ----------------------------------------------------------------
--- 9. Food diary — eaten-day attribution.
---    Per GST eaten-day macro totals + evening_carbs_g (relative to
---    THAT night's sleep onset) + last_meal_to_sleep_min.
+-- 9. Food diary — meal-day attribution (04:00 GST boundary; see meal_day
+--    in meals_enriched below, L16a).
+--    Per GST meal-day macro totals + evening_carbs_g (relative to THAT
+--    night's sleep onset) + last_meal_to_sleep_min.
 --
 --    Attribution rule (DO NOT change without thinking):
---    Meal-derived metrics attribute to the GST EATEN-day. The lagged
---    correlation engine relates them to next-day outcomes via its
---    own lag — pre-shifting to wake-day here would DOUBLE-SHIFT
---    (engine adds +1d on top of our +1d) and silently mis-align.
+--    Meal-derived metrics attribute to the GST MEAL-day (04:00→04:00, so a
+--    post-midnight meal lands on the day the person was still up). The lagged
+--    correlation engine relates them to next-day outcomes via its OWN +1d
+--    lag — pre-shifting to wake-day here would DOUBLE-SHIFT (engine adds +1d
+--    on top of our +1d) and silently mis-align. Moving the day BOUNDARY
+--    (when a day starts) is NOT a wake-day pre-shift, so it stays compatible.
 --
 --    evening_carbs_g definition (primary):
 --      carbs from meals eaten within 4h BEFORE that night's sleep onset.
---      "That night" = the sleep whose wake_day = eaten_day + 1.
+--      "That night" = the sleep whose wake_day = meal_day + 1.
 --    Fallback (no sleep recorded for the following morning):
 --      meals whose GST clock-time ≥ 18:00.
 --
@@ -342,7 +345,7 @@ whoop_sleep_onset AS (
   --
   -- DISTINCT ON (wake_day): a split-sleep / nap-as-main night can
   -- yield two rows sharing wake_day. Without the dedup, the LEFT JOIN
-  -- in meals_enriched (`s.wake_day = eaten_day + 1`) duplicates every
+  -- in meals_enriched (`s.wake_day = meal_day + 1`) duplicates every
   -- meal row, inflating meals_daily's SUM(carbs_g) etc. by a factor of
   -- two. Same split-sleep guard the whoop_wake CTE comment describes
   -- (cycle without main sleep, two cycles waking same day).
@@ -359,12 +362,33 @@ whoop_sleep_onset AS (
   ORDER BY (period_end AT TIME ZONE 'Asia/Dubai')::date, period_start
 ),
 meals_enriched AS (
-  -- For each meal: GST eaten-day + the upcoming night's sleep onset
-  -- (sleep that ends on eaten_day + 1) + an is_evening flag with the
-  -- onset-relative primary + clock-time fallback per the comment above.
+  -- For each meal: its GST MEAL-DAY + the upcoming night's sleep onset +
+  -- an is_evening flag (onset-relative primary + clock-time fallback).
+  --
+  -- meal_day (L16a — RESOLVED by Irfan 2026-07-30): the eating day runs
+  -- 04:00 → 04:00 GST, NOT midnight → midnight, so late-night eating counts
+  -- toward the day the person was still up. Compute the day from
+  -- (eaten_at − 4h): a meal at 00:00–03:59 GST attributes to the PREVIOUS
+  -- calendar day; 04:00 onward stays "today" (a normal breakfast is
+  -- unaffected). MEAL_DAY_CUTOFF = 04:00 GST — provisional/tunable (change
+  -- the INTERVAL below). Worked examples (GST → meal_day):
+  --   2026-07-30 01:00 → 2026-07-29   (previous day)
+  --   2026-07-30 03:59 → 2026-07-29   (previous day)
+  --   2026-07-30 04:00 → 2026-07-30   (same day)
+  --   2026-07-30 09:00 → 2026-07-30   (same day)
+  --   2026-08-01 02:00 → 2026-07-31   (across a month boundary)
+  --
+  -- The sleep-onset join keys off (meal_day + 1), so a 1am pre-sleep meal now
+  -- BOTH lands on the previous day AND is measured against the sleep it
+  -- actually precedes (that morning's wake_day = meal_day + 1) — macros and
+  -- the pre-sleep test stay consistent. is_evening's 4h window and
+  -- last_meal_to_sleep_min are unchanged (already onset-relative). This moves
+  -- the DAY BOUNDARY only, not a wake-day pre-shift, so the correlation
+  -- engine's own +1d lag (meal_day → next-day outcome) is NOT double-shifted
+  -- (gotcha: eaten-day attribution — do NOT pre-shift to wake-day).
   SELECT
     m.eaten_at,
-    (m.eaten_at AT TIME ZONE 'Asia/Dubai')::date AS eaten_day,
+    ((m.eaten_at AT TIME ZONE 'Asia/Dubai') - INTERVAL '4 hours')::date AS meal_day,
     m.carbs_g, m.protein_g, m.fat_g, m.fiber_g, m.sugar_g, m.sodium_mg, m.calories,
     s.sleep_onset,
     CASE
@@ -374,22 +398,13 @@ meals_enriched AS (
       ELSE
         (m.eaten_at AT TIME ZONE 'Asia/Dubai')::time >= TIME '18:00'
     END AS is_evening
-  -- NOTE (L16a — FLAGGED, not changed): this keys a meal's "upcoming night"
-  -- to wake_day = eaten_day + 1. A post-midnight pre-sleep meal (e.g. 01:00)
-  -- has eaten_day = that calendar day, but the sleep it actually precedes ends
-  -- the SAME day (wake_day = eaten_day), so it's measured against the wrong
-  -- (following) night. The correct attribution of a small-hours meal depends
-  -- on Irfan's real routine (is 01:00 late-night eating or an early breakfast?)
-  -- and refining it shifts an existing correlation-engine covariate, so it's
-  -- left as a product decision rather than guessed. The `eaten_at <= sleep_onset`
-  -- constraint below already prevents the negative-duration case (gotcha #154).
   FROM meals m
   LEFT JOIN whoop_sleep_onset s
-    ON s.wake_day = (m.eaten_at AT TIME ZONE 'Asia/Dubai')::date + 1
+    ON s.wake_day = ((m.eaten_at AT TIME ZONE 'Asia/Dubai') - INTERVAL '4 hours')::date + 1
 ),
 meals_daily AS (
   SELECT
-    eaten_day AS date,
+    meal_day AS date,
     SUM(carbs_g)   AS carbs_g,
     SUM(protein_g) AS protein_g,
     SUM(fat_g)     AS fat_g,
@@ -432,7 +447,7 @@ meals_daily AS (
       )
     END AS last_meal_to_sleep_min
   FROM meals_enriched
-  GROUP BY eaten_day
+  GROUP BY meal_day
 )
 
 SELECT
