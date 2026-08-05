@@ -9,18 +9,36 @@ export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  // timeZone pinned to GST (L9): /report is server-rendered, so without it
+  // the server formats in UTC and the client re-hydrates in GST — a visible
+  // 4h/one-day shift until hydration. GST is the app's canonical day.
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' })
 }
 
 export function fmtDateShort(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'Asia/Dubai' })
 }
 
 export function fmtNum(v: number | null | undefined, dp: number = 1): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—'
   return v.toFixed(dp)
+}
+
+/**
+ * LDL reduction-from-baseline label with a SIGN-CORRECT arrow (L11). Pure +
+ * exported so the arrow logic is unit-testable. `reductionPct` is signed:
+ *   >= 0 → LDL fell (good): "↓ N% from baseline B"
+ *   <  0 → LDL ROSE:        "↑ N% above baseline B"
+ * The old inline code hard-coded ↓ and rendered a rise as "↓ +12% from
+ * baseline" — a down arrow on a value that went up, with reduction framing.
+ */
+export function ldlReductionLabel(reductionPct: number, baseline: number): string {
+  const b = fmtNum(baseline, 2)
+  return reductionPct >= 0
+    ? `↓ ${reductionPct.toFixed(0)}% from baseline ${b}`
+    : `↑ ${Math.abs(reductionPct).toFixed(0)}% above baseline ${b}`
 }
 
 export function fmtInt(v: number | null | undefined): string {

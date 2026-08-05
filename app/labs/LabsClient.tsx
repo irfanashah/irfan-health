@@ -138,7 +138,13 @@ export function LabsClient() {
   const [commitError, setCommitError] = useState<string | null>(null)
   const [commitOk, setCommitOk] = useState<{ rowsWritten: number; aliasesLearned: number; rangesLearned: number } | null>(null)
 
-  function resetDraft() {
+  // Clear only the draft/review fields — NOT the commit status. After a
+  // successful commit we clear the draft (so the review UI collapses) but
+  // must KEEP `commitOk` so the success banner renders (L8) — the banner's
+  // condition is `commitOk && !draft`, so nulling commitOk in the same
+  // state batch that nulls draft made a successful commit look silent and
+  // invited a duplicate re-upload (which feeds M14).
+  function clearDraftFields() {
     setDraft(null)
     setRawFileRef(null)
     setDrawnAt('')
@@ -146,6 +152,12 @@ export function LabsClient() {
     setOrderingPhysician('')
     setPanelNotes('')
     setRows([])
+  }
+
+  // Full reset — draft fields AND status. Used by Discard and at the start
+  // of a new upload, where a stale success/error banner should clear.
+  function resetDraft() {
+    clearDraftFields()
     setCommitOk(null)
     setCommitError(null)
   }
@@ -299,12 +311,17 @@ export function LabsClient() {
         setCommitError(res.error)
         return
       }
+      setCommitError(null)
       setCommitOk({
         rowsWritten: res.rowsWritten,
         aliasesLearned: res.aliasesLearned,
         rangesLearned: res.rangesLearned,
       })
-      resetDraft()
+      // Collapse the review UI but KEEP commitOk so the success banner
+      // shows (L8). commitOk clears on the next upload (onUpload nulls it)
+      // or Discard. router.refresh() re-fetches server data without
+      // remounting this client component, so the banner survives it.
+      clearDraftFields()
       router.refresh()
     })
   }

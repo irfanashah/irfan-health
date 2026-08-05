@@ -33,7 +33,11 @@ export function TimelinePanel({ entries }: Props) {
         accent="var(--amber)"
         right={<span className="muted-note">{entries.length} entries</span>}
       />
-      <Timeline entries={entries} now={now ?? new Date(0)} />
+      {/* Pass `now` straight through — null until the clock mounts, where
+          Timeline renders absolute GST time instead of a bogus "just now"
+          (L10). */}
+      <Timeline entries={entries} now={now} />
+
     </Card>
   )
 }

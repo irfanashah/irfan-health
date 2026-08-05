@@ -35,7 +35,7 @@ export function Header({ range, onRangeChange, tab, onTabChange }: Props) {
   const now = useMemo(() => (mounted ? new Date() : null), [mounted])
 
   const dateLabel = now
-    ? now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+    ? now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Dubai' })
     : ''
   const greet = now ? greeting(now.getHours()) : 'Welcome'
   const recoveryDay = now

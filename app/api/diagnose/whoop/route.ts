@@ -147,9 +147,56 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const sleepsBreakdownRaw = summarise(nonNapSleeps)
   const sleepsBreakdown = { ...sleepsBreakdownRaw, nonNap: nonNapSleeps.length, naps }
 
-  const fromCycles = cyclesBreakdown.scored
-  const fromRecoveries = recoveriesBreakdown.scored * RECOVERY_METRICS.length
-  const fromSleeps = sleepsBreakdown.scored * SLEEP_METRICS.length
+  // ── Expected rows — mirror the ADAPTER's write rules so the gap reflects
+  //    reality, not an idealised scored×N (L5). Two corrections:
+  //    (a) Boundary alignment: attribute each record to its period_start
+  //        (cycle.start; recovery → its linked cycle's start; sleep.start)
+  //        and count only records whose period_start ∈ [fromDate,toDate] —
+  //        the SAME predicate the DB count uses — so a cycle that started
+  //        just before fromDate isn't counted as expected on one side and
+  //        clipped on the other (phantom gap).
+  //    (b) Nullable fields: spo2_whoop / skin_temp are 4.0+ fields the
+  //        adapter null-skips (gotcha #34) — it writes no row when they're
+  //        absent — so expected must count only non-null values, not every
+  //        scored recovery. (The core three are non-null when scored, so
+  //        their expected is unchanged.)
+  const cycleById = new Map<number, WhoopCycleRecord>()
+  for (const c of cycles) cycleById.set(c.id, c)
+
+  const inWindow = (iso: string | null | undefined): boolean => {
+    if (!iso) return false
+    const t = new Date(iso).getTime()
+    return t >= fromDate.getTime() && t <= toDate.getTime()
+  }
+
+  const scoredCyclesInWindow = cycles.filter(
+    (c) => c.score_state === 'SCORED' && c.score && c.start && c.end && inWindow(c.start)
+  )
+  const scoredRecInWindow = recoveries.filter((r) => {
+    if (r.score_state !== 'SCORED' || !r.score) return false
+    const c = cycleById.get(r.cycle_id)
+    return !!c && !!c.start && !!c.end && inWindow(c.start)
+  })
+  const scoredSleepsInWindow = nonNapSleeps.filter(
+    (s) => s.score_state === 'SCORED' && s.score && s.start && s.end && inWindow(s.start)
+  )
+
+  const recoveryFieldValue: Record<(typeof RECOVERY_METRICS)[number], (r: WhoopRecoveryRecord) => number | null | undefined> = {
+    recovery_score: (r) => r.score?.recovery_score,
+    hrv_rmssd: (r) => r.score?.hrv_rmssd_milli,
+    heart_rate_resting: (r) => r.score?.resting_heart_rate,
+    spo2_whoop: (r) => r.score?.spo2_percentage,
+    skin_temp: (r) => r.score?.skin_temp_celsius,
+  }
+  const expectedRecoveryMetric = (mt: (typeof RECOVERY_METRICS)[number]): number =>
+    scoredRecInWindow.filter((r) => {
+      const v = recoveryFieldValue[mt](r)
+      return v !== null && v !== undefined
+    }).length
+
+  const fromCycles = scoredCyclesInWindow.length
+  const fromRecoveries = RECOVERY_METRICS.reduce((acc, mt) => acc + expectedRecoveryMetric(mt), 0)
+  const fromSleeps = scoredSleepsInWindow.length * SLEEP_METRICS.length
   const expectedTotal = fromCycles + fromRecoveries + fromSleeps
 
   // ── Count actual rows in DB for the same window ────────────────────────────
@@ -200,9 +247,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
   }
 
-  pushRow('strain_score', cyclesBreakdown.scored)
-  for (const m of RECOVERY_METRICS) pushRow(m, recoveriesBreakdown.scored)
-  for (const m of SLEEP_METRICS) pushRow(m, sleepsBreakdown.scored)
+  pushRow('strain_score', fromCycles)
+  for (const m of RECOVERY_METRICS) pushRow(m, expectedRecoveryMetric(m))
+  for (const m of SLEEP_METRICS) pushRow(m, scoredSleepsInWindow.length)
 
   const totalGap = comparison.reduce((acc, c) => acc + c.gap, 0)
 

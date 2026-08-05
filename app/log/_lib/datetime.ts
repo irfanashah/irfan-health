@@ -30,5 +30,6 @@ export function formatStamp(iso: string): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Asia/Dubai', // GST — the app's canonical day boundary (L9)
   })
 }

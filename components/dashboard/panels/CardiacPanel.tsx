@@ -28,7 +28,7 @@ const BP_DIVIDER = 95
 // (BP_SYS_BANDS / BP_DIA_BANDS) already use the correct mmHg values, so
 // just concatenate — they don't overlap visually.
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })
 }
 
 export function CardiacPanel({ series, latest }: Props) {

@@ -14,7 +14,14 @@ import { SeverityDots } from './SeverityDots'
 
 interface Props {
   entries: RecentEntry[]
-  now?: Date
+  /**
+   * The client clock. `null` (or omitted) means "clock not mounted yet" —
+   * render an ABSOLUTE GST timestamp instead of a relative one (L10). The
+   * old fallback `new Date(0)` made every entry read "just now" (a negative
+   * diff satisfies the `< 60s` branch) on the server render, first paint,
+   * print, and JS-off. Absolute time is always correct without a live clock.
+   */
+  now?: Date | null
 }
 
 const TYPE_COLOR: Record<EntryKind, string> = {
@@ -23,6 +30,12 @@ const TYPE_COLOR: Record<EntryKind, string> = {
   bp: 'var(--teal)',
   symptom: 'var(--amber)',
   note: 'var(--text-muted)',
+}
+
+// Absolute GST timestamp — used until the client clock mounts (L10).
+function absTime(d: Date): string {
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
+  return `${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })} · ${time}`
 }
 
 function relTime(d: Date, now: Date): string {
@@ -34,10 +47,10 @@ function relTime(d: Date, now: Date): string {
   const that = new Date(d)
   that.setHours(0, 0, 0, 0)
   const days = Math.round((today.getTime() - that.getTime()) / 86400000)
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
   if (days === 0) return `Today · ${time}`
   if (days === 1) return `Yesterday · ${time}`
-  return `${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`
+  return `${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })} · ${time}`
 }
 
 function isRedFlag(e: RecentEntry): boolean {
@@ -70,7 +83,7 @@ function iconFor(e: RecentEntry) {
   }
 }
 
-export function Timeline({ entries, now = new Date() }: Props) {
+export function Timeline({ entries, now = null }: Props) {
   if (entries.length === 0) {
     return <div className="empty-note">No manual entries yet — log something via Quick log</div>
   }
@@ -102,7 +115,7 @@ export function Timeline({ entries, now = new Date() }: Props) {
                 {rawSym && rawSym.severity !== null && (
                   <SeverityDots n={rawSym.severity} />
                 )}
-                <span className="tl-time">{relTime(occurredAt, now)}</span>
+                <span className="tl-time">{now ? relTime(occurredAt, now) : absTime(occurredAt)}</span>
               </div>
               {rawSym?.note && <div className="tl-note">{rawSym.note}</div>}
               {rawNote && <div className="tl-note">{rawNote.text}</div>}

@@ -59,9 +59,13 @@ function makeRecordId(kind: EntryKind): string {
   return `manual_${kind}_${randomUUID()}`
 }
 
-// Inserts a one-row ingestion_log marker for a manual write. Returns the id to
-// stamp on the data row. status='success' from the start because the write
-// either completes synchronously or the whole action throws (no partial state).
+// Inserts a one-row ingestion_log marker for a manual write. Returns the id
+// to stamp on the data row. Opens as status='pending' (L4): the data row's
+// FK requires the log to exist first, so we can't just "insert data then
+// log". Instead open pending → insert data → finalizeManualLog() writes the
+// REAL outcome. Previously this wrote status='success', records_written=1
+// up front, so a failed data insert left a phantom "success" audit row that
+// over-counted written records and hid the failure.
 async function insertManualLog(
   supabase: ReturnType<typeof createServiceClient>,
   rawPayload: unknown
@@ -70,12 +74,11 @@ async function insertManualLog(
     .from('ingestion_log')
     .insert({
       source_slug: SOURCE_SLUG,
-      status: 'success',
+      status: 'pending',
       records_found: 1,
-      records_written: 1,
+      records_written: 0,
       records_skipped: 0,
       raw_payload: rawPayload,
-      completed_at: new Date().toISOString(),
     })
     .select('id')
     .single()
@@ -84,6 +87,25 @@ async function insertManualLog(
     throw new Error(`ingestion_log insert failed: ${error?.message}`)
   }
   return data.id as string
+}
+
+// Close the pending log row with the real outcome of the data insert (L4).
+// Best-effort: a finalize failure is logged but never masks the actual
+// create result the caller returns.
+async function finalizeManualLog(
+  supabase: ReturnType<typeof createServiceClient>,
+  logId: string,
+  errorMessage: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('ingestion_log')
+    .update(
+      errorMessage
+        ? { status: 'error', records_written: 0, error_detail: errorMessage, completed_at: new Date().toISOString() }
+        : { status: 'success', records_written: 1, completed_at: new Date().toISOString() }
+    )
+    .eq('id', logId)
+  if (error) console.error(`[manual-log] finalize ${logId} failed: ${error.message}`)
 }
 
 function done(): ActionResult {
@@ -123,6 +145,7 @@ export async function createWeight(payload: WeightPayload): Promise<ActionResult
       ingestion_log_id: logId,
     })
 
+    await finalizeManualLog(supabase, logId, error?.message ?? null)
     if (error) return failed(error.message)
     return done()
   } catch (e) {
@@ -159,6 +182,7 @@ export async function createGlucose(payload: GlucosePayload): Promise<ActionResu
       ingestion_log_id: logId,
     })
 
+    await finalizeManualLog(supabase, logId, error?.message ?? null)
     if (error) return failed(error.message)
     return done()
   } catch (e) {
@@ -214,6 +238,7 @@ export async function createSymptom(payload: SymptomPayload): Promise<ActionResu
       ingestion_log_id: logId,
     })
 
+    await finalizeManualLog(supabase, logId, error?.message ?? null)
     if (error) return failed(error.message)
     return done()
   } catch (e) {
@@ -246,6 +271,7 @@ export async function createNote(payload: NotePayload): Promise<ActionResult> {
       ingestion_log_id: logId,
     })
 
+    await finalizeManualLog(supabase, logId, error?.message ?? null)
     if (error) return failed(error.message)
     return done()
   } catch (e) {
@@ -300,6 +326,7 @@ export async function createBp(payload: BpPayload): Promise<ActionResult> {
       ingestion_log_id: logId,
     })
 
+    await finalizeManualLog(supabase, logId, error?.message ?? null)
     if (error) return failed(error.message)
     return done()
   } catch (e) {

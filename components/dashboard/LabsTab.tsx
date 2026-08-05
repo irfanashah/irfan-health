@@ -24,7 +24,7 @@ interface Props {
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })
 }
 
 function isOutOfRange(v: LabValueRow): boolean {

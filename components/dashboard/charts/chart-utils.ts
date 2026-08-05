@@ -31,6 +31,9 @@ export function smoothPath(pts: Pt[]): string {
   return d
 }
 
-export const fmtTime = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-export const fmtDay = (d: Date) => d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-export const fmtDayShort = (d: Date) => d.toLocaleDateString([], { weekday: 'short' })
+// timeZone pinned to GST (L9): charts SSR then hydrate, so a bare formatter
+// labels axes in UTC on the server and GST on the client. GST is the app's
+// canonical day boundary (lib/gst.ts), so pin display to it everywhere.
+export const fmtTime = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
+export const fmtDay = (d: Date) => d.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })
+export const fmtDayShort = (d: Date) => d.toLocaleDateString([], { weekday: 'short', timeZone: 'Asia/Dubai' })

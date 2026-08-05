@@ -47,36 +47,40 @@ CREATE POLICY "authenticated_full_access" ON medications
   FOR ALL USING (auth.role() = 'authenticated');
 
 
--- 3. Seed. Idempotent via a partial unique constraint trick: insert only
---    if no active row with the same (name, dose) already exists. The
---    DO block lets the migration re-run safely without duplicating rows.
+-- 3. Seed. Idempotent: insert only if NO row with the same (name, dose)
+--    already exists — active OR inactive (L2). The guard used to check
+--    `active = true`, so a re-run after Irfan deactivated a med (never-
+--    delete: stopped meds live on as active=false) found no *active* row
+--    and RESURRECTED the stopped med into the doctor-record list. Checking
+--    for any row keeps the seed a true one-time bootstrap and respects the
+--    deactivation. The DO block lets the migration re-run safely.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Concor' AND dose = '5mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Concor' AND dose = '5mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Concor', '5mg', 'morning', 'bisoprolol — beta-blocker');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Crestor' AND dose = '40mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Crestor' AND dose = '40mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Crestor', '40mg', 'morning', 'rosuvastatin — statin');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Brilinta' AND dose = '90mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Brilinta' AND dose = '90mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Brilinta', '90mg', 'BD', 'ticagrelor — antiplatelet');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Ezetrol' AND dose = '10mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Ezetrol' AND dose = '10mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Ezetrol', '10mg', 'morning', 'ezetimibe — cholesterol absorption inhibitor');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Tritace' AND dose = '10mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Tritace' AND dose = '10mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Tritace', '10mg', 'morning', 'ramipril — ACE inhibitor');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Aspirin Protect' AND dose = '100mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Aspirin Protect' AND dose = '100mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Aspirin Protect', '100mg', 'morning', 'antiplatelet');
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Pantozol' AND dose = '40mg' AND active = true) THEN
+  IF NOT EXISTS (SELECT 1 FROM medications WHERE name = 'Pantozol' AND dose = '40mg') THEN
     INSERT INTO medications (name, dose, frequency, notes) VALUES
       ('Pantozol', '40mg', 'morning', 'pantoprazole — PPI, gastric protection on dual antiplatelet');
   END IF;

@@ -42,7 +42,7 @@ const DAY_MS = 24 * HOUR_MS
 
 function fmtUpdated(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
 }
 
 function fmtAgo(time: Date): string {
@@ -62,11 +62,11 @@ function fmtAgo(time: Date): string {
 function fmtListTime(time: Date): string {
   const dt = Date.now() - time.getTime()
   if (dt < DAY_MS) {
-    return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    return time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
   }
-  return time.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+  return time.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' }) +
     ' · ' +
-    time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Dubai' })
 }
 
 export function GlucosePanel({ cgm24h, latest, unit, onUnitChange, fingersticks = [], meals = [] }: Props) {

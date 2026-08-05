@@ -123,6 +123,30 @@ export const DRIFT_METRICS: readonly DriftMetricId[] = [
   'spo2_avg', 'spo2_min', 'spo2_odi', 'spo2_time_below_90', 'skin_temp',
 ]
 
+const DRIFT_METRIC_SET: ReadonlySet<string> = new Set(DRIFT_METRICS)
+
+/** Runtime type guard — true iff `x` is a known DriftMetricId. */
+export function isDriftMetricId(x: string): x is DriftMetricId {
+  return DRIFT_METRIC_SET.has(x)
+}
+
+/**
+ * Partition arbitrary strings into known DriftMetricIds vs unknown ones.
+ * Used to VALIDATE `med_changes.affected_metrics` at write time (L14) — the
+ * column is free text, so a typo like `spo2avg` would otherwise persist and
+ * silently no-op the baseline reset (the exclusion mask only matches known
+ * columns, so the mis-typed metric never gets excluded).
+ */
+export function partitionDriftMetricIds(ids: string[]): { valid: DriftMetricId[]; invalid: string[] } {
+  const valid: DriftMetricId[] = []
+  const invalid: string[] = []
+  for (const id of ids) {
+    if (isDriftMetricId(id)) valid.push(id)
+    else invalid.push(id)
+  }
+  return { valid, invalid }
+}
+
 /**
  * Look-back span (calendar days) over which the TS layer counts held
  * data-days for the ≥M persistence check. Per spec, "~2 × the short

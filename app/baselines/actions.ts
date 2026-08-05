@@ -7,7 +7,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import type { DriftMetricId } from '@/components/dashboard/drift-config'
+import { partitionDriftMetricIds, type DriftMetricId } from '@/components/dashboard/drift-config'
 
 async function requireSession(): Promise<void> {
   const supabase = await createClient()
@@ -232,6 +232,17 @@ export async function addMedChangeAction(input: MedChangeInput): Promise<ActionR
     if (!input.label.trim()) return { ok: false, error: 'Label required.' }
     if (input.affected_metrics.length === 0) {
       return { ok: false, error: 'Select at least one affected metric.' }
+    }
+    // Validate every id against the known drift-metric set (L14). The column
+    // is free text; an unrecognised id would persist and then silently fail
+    // to reset any baseline (the exclusion mask matches known columns only),
+    // so reject it loudly at write time instead.
+    const { invalid } = partitionDriftMetricIds(input.affected_metrics)
+    if (invalid.length > 0) {
+      return {
+        ok: false,
+        error: `Unknown metric${invalid.length === 1 ? '' : 's'}: ${invalid.join(', ')}.`,
+      }
     }
 
     const supabase = createServiceClient()

@@ -49,6 +49,7 @@ import {
   fmtDateShort,
   fmtInt,
   fmtNum,
+  ldlReductionLabel,
 } from './_lib/format'
 
 interface Props {
@@ -333,7 +334,7 @@ export function Report(props: Props) {
                           )}
                           {r.slug === 'ldl' && r.reductionPct !== null && r.baseline !== null && (
                             <div className="report-ldl-reduction">
-                              ↓ {r.reductionPct >= 0 ? r.reductionPct.toFixed(0) : `+${Math.abs(r.reductionPct).toFixed(0)}`}% from baseline {fmtNum(r.baseline, 2)}
+                              {ldlReductionLabel(r.reductionPct, r.baseline)}
                               {r.meetsReductionGoal ? ' · ≥50% goal met' : ' · ≥50% goal not yet met'}
                             </div>
                           )}
@@ -569,7 +570,12 @@ export function Report(props: Props) {
 
         {fingersticks.length > 0 && (
           <>
-            <h3 className="report-h3">Recent fingersticks ({fingersticks.length})</h3>
+            {/* Honest heading (L11): the table caps at 20 rows, so say
+                "showing 20 of N" when truncated rather than heading the
+                count of all fingersticks over a table that only shows 20. */}
+            <h3 className="report-h3">
+              Recent fingersticks ({fingersticks.length > 20 ? `showing 20 of ${fingersticks.length}` : fingersticks.length})
+            </h3>
             <div className="report-table-wrap">
             <table className="report-table report-table-compact">
               <thead>
@@ -578,7 +584,7 @@ export function Report(props: Props) {
               <tbody>
                 {[...fingersticks].reverse().slice(0, 20).map((fs, i) => (
                   <tr key={i}>
-                    <td>{fmtDate(fs.time.toISOString())} {fs.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>{fmtDate(fs.time.toISOString())} {fs.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dubai' })}</td>
                     <td className="num">{fmtNum(fs.mmol, 1)} mmol/L</td>
                     <td>{fs.mealMarker ?? '—'}</td>
                     <td>{fs.source}</td>

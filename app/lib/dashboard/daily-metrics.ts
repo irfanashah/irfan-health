@@ -159,6 +159,13 @@ export interface CgmPoint {
  * Last 24 hours of CGM readings, oldest first. ~288 rows at 5-min cadence —
  * comfortably under Supabase's 1000-row .select() cap (gotcha #10), so we
  * pull raw rather than aggregating.
+ *
+ * Ordered DESCENDING then reversed in JS (L6): at 5-min cadence 24h is ~288
+ * rows, but a 1-min uploader (or duplicate uploads) can exceed 1000/24h — an
+ * `ascending + limit(1000)` query would then keep the OLDEST 1000 and silently
+ * drop the newest readings, i.e. exactly the live "now" glucose the dashboard
+ * cares about. Descending + limit keeps the most-recent 1000; the reverse
+ * restores oldest-first for the chart/trend consumers.
  */
 export async function fetchCgm24h(): Promise<CgmPoint[]> {
   const supabase = createServiceClient()
@@ -169,7 +176,7 @@ export async function fetchCgm24h(): Promise<CgmPoint[]> {
     .select('recorded_at, canonical_value')
     .eq('metric_type', 'glucose_cgm')
     .gte('recorded_at', since)
-    .order('recorded_at', { ascending: true })
+    .order('recorded_at', { ascending: false })
     .limit(1000)
 
   if (error) throw new Error(`cgm 24h fetch failed: ${error.message}`)
@@ -181,6 +188,7 @@ export async function fetchCgm24h(): Promise<CgmPoint[]> {
       return { time: row.recorded_at, mmol: v }
     })
     .filter((p): p is CgmPoint => p !== null)
+    .reverse() // DB gave newest-first; consumers want oldest-first
 }
 
 // ─── Latest KPI values ─────────────────────────────────────────────────────
@@ -230,6 +238,45 @@ export const CGM_EXPECTED_INTERVAL_MIN = 5
 export function computeCgmWear(pointsCount: number): { wearHours: number; partial: boolean } {
   const wearHours = (pointsCount * CGM_EXPECTED_INTERVAL_MIN) / 60
   return { wearHours, partial: wearHours < TIR_MIN_WEAR_HOURS }
+}
+
+/**
+ * Trend window + threshold (L7). The reference point for the slope is the
+ * most recent reading at least `CGM_TREND_WINDOW_MIN` minutes older than the
+ * latest — chosen by TIMESTAMP, not a fixed index — so the slope is correct
+ * after a sensor gap and at any cadence (5-min or 1-min). The threshold is
+ * expressed in mmol/min and set to preserve the previous behaviour exactly on
+ * uniform 5-min data: the old code flagged "rising" at >0.18 mmol per 5-min
+ * interval over a 15-min span (= >0.54 mmol / 15 min = 0.036 mmol/min).
+ */
+export const CGM_TREND_WINDOW_MIN = 15
+export const CGM_TREND_THRESHOLD_MMOL_PER_MIN = 0.036
+
+/**
+ * Pure — trend direction + slope (mmol/min) from actual timestamps. `points`
+ * must be oldest-first (as `fetchCgm24h` returns). Returns flat/0 for an empty
+ * series or when only one distinct timestamp exists.
+ */
+export function computeCgmTrend(
+  points: { time: string; mmol: number }[]
+): { trendDir: 'rising' | 'falling' | 'flat'; slope: number } {
+  if (points.length === 0) return { trendDir: 'flat', slope: 0 }
+  const last = points[points.length - 1]
+  const lastT = new Date(last.time).getTime()
+  // Newest→oldest: the first point ≥ window-min old is the reference. If none
+  // is that old (all readings within the window), fall back to the oldest.
+  let ref = points[0]
+  for (let i = points.length - 1; i >= 0; i--) {
+    const ageMin = (lastT - new Date(points[i].time).getTime()) / 60000
+    if (ageMin >= CGM_TREND_WINDOW_MIN) { ref = points[i]; break }
+  }
+  const deltaMin = (lastT - new Date(ref.time).getTime()) / 60000
+  if (deltaMin <= 0) return { trendDir: 'flat', slope: 0 }
+  const slope = (last.mmol - ref.mmol) / deltaMin
+  let trendDir: 'rising' | 'falling' | 'flat' = 'flat'
+  if (slope > CGM_TREND_THRESHOLD_MMOL_PER_MIN) trendDir = 'rising'
+  else if (slope < -CGM_TREND_THRESHOLD_MMOL_PER_MIN) trendDir = 'falling'
+  return { trendDir, slope }
 }
 
 export interface LatestKpis {
@@ -350,16 +397,12 @@ export async function fetchLatestKpis(cgm24h?: CgmPoint[]): Promise<LatestKpis> 
         }
       : null
 
-  // CGM trend: slope from the last ~3 points (≈15 min). Falls back gracefully
-  // if too few readings.
+  // CGM trend: slope over the last ~15 min, referenced by timestamp so it's
+  // correct after a gap and at any cadence (L7 — see computeCgmTrend).
   let cgm: LatestKpis['cgm'] = null
   if (cgm24h && cgm24h.length > 0) {
     const last = cgm24h[cgm24h.length - 1]
-    const prev = cgm24h[cgm24h.length - 4] ?? cgm24h[cgm24h.length - 2] ?? last
-    const slope = (last.mmol - prev.mmol) / 3
-    let trendDir: 'rising' | 'falling' | 'flat' = 'flat'
-    if (slope > 0.18) trendDir = 'rising'
-    else if (slope < -0.18) trendDir = 'falling'
+    const { trendDir, slope } = computeCgmTrend(cgm24h)
     const { stale, ageMin } = computeCgmFreshness(last.time, Date.now())
     cgm = { value: last.mmol, at: last.time, trendDir, slope, stale, ageMin }
   }

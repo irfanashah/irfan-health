@@ -69,10 +69,15 @@ WITH
 -- ----------------------------------------------------------------
 bounds AS (
   SELECT LEAST(
+    -- period_end across ALL sources, not just Whoop (L15): Oxylink SpO2 is a
+    -- daily_summary with period_end but NO recorded_at, so it was invisible
+    -- to both the old whoop-only period_end branch and the recorded_at branch.
+    -- Latent today (Whoop backfill predates Oxylink) but would drop the
+    -- earliest Oxylink nights once they become the earliest data.
     COALESCE(
       (SELECT MIN((period_end  AT TIME ZONE 'Asia/Dubai')::date)
        FROM health_observations
-       WHERE source_slug = 'whoop' AND period_end IS NOT NULL),
+       WHERE period_end IS NOT NULL),
       (now() AT TIME ZONE 'Asia/Dubai')::date
     ),
     COALESCE(
@@ -84,6 +89,14 @@ bounds AS (
       (SELECT MIN((recorded_at AT TIME ZONE 'Asia/Dubai')::date)
        FROM health_observations
        WHERE recorded_at IS NOT NULL),
+      (now() AT TIME ZONE 'Asia/Dubai')::date
+    ),
+    -- Meals (L15): meal-only early dates live in the `meals` table, which the
+    -- other branches never consult, so a meal logged before any device data
+    -- would fall off the spine.
+    COALESCE(
+      (SELECT MIN((eaten_at AT TIME ZONE 'Asia/Dubai')::date)
+       FROM meals),
       (now() AT TIME ZONE 'Asia/Dubai')::date
     )
   ) AS first_date
@@ -203,9 +216,19 @@ whoop_daily AS (
 -- 5. Sleep stages (Whoop). canonical_unit='min' on the source rows.
 --    The view exposes HOURS to match the prototype's sleep.total shape.
 -- ----------------------------------------------------------------
-sleep_daily AS (
+-- Split-sleep guard (L16b): a fragmented night / nap-as-main can leave TWO
+-- sleep sessions ending the same GST day. The old single GROUP BY wake-day +
+-- per-metric MAX() mixed stages ACROSS the two sessions (total from session A,
+-- deep from session B — an incoherent "night"). Fix in two steps, mirroring
+-- whoop_wake / whoop_sleep_onset's split-sleep handling:
+--   1. sleep_sessions — pivot per SESSION (group by period_start/period_end),
+--      so each row is one coherent session's stages;
+--   2. sleep_daily — DISTINCT ON (wake_day) ORDER BY ..., period_start picks
+--      the EARLIEST-onset session (the real main night, not a 4am nap).
+sleep_sessions AS (
   SELECT
     (period_end AT TIME ZONE 'Asia/Dubai')::date AS date,
+    period_start,
     MAX(canonical_value) FILTER (WHERE metric_type = 'sleep_duration_total') / 60.0 AS sleep_total,
     MAX(canonical_value) FILTER (WHERE metric_type = 'sleep_score')                AS sleep_performance,
     MAX(canonical_value) FILTER (WHERE metric_type = 'sleep_duration_deep')  / 60.0 AS sleep_deep,
@@ -220,7 +243,13 @@ sleep_daily AS (
       'sleep_duration_total','sleep_score',
       'sleep_duration_deep','sleep_duration_light','sleep_duration_rem','sleep_duration_awake'
     )
-  GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date
+  GROUP BY (period_end AT TIME ZONE 'Asia/Dubai')::date, period_start
+),
+sleep_daily AS (
+  SELECT DISTINCT ON (date)
+    date, sleep_total, sleep_performance, sleep_deep, sleep_light, sleep_rem, sleep_awake
+  FROM sleep_sessions
+  ORDER BY date, period_start
 ),
 
 -- ----------------------------------------------------------------
@@ -345,6 +374,15 @@ meals_enriched AS (
       ELSE
         (m.eaten_at AT TIME ZONE 'Asia/Dubai')::time >= TIME '18:00'
     END AS is_evening
+  -- NOTE (L16a — FLAGGED, not changed): this keys a meal's "upcoming night"
+  -- to wake_day = eaten_day + 1. A post-midnight pre-sleep meal (e.g. 01:00)
+  -- has eaten_day = that calendar day, but the sleep it actually precedes ends
+  -- the SAME day (wake_day = eaten_day), so it's measured against the wrong
+  -- (following) night. The correct attribution of a small-hours meal depends
+  -- on Irfan's real routine (is 01:00 late-night eating or an early breakfast?)
+  -- and refining it shifts an existing correlation-engine covariate, so it's
+  -- left as a product decision rather than guessed. The `eaten_at <= sleep_onset`
+  -- constraint below already prevents the negative-duration case (gotcha #154).
   FROM meals m
   LEFT JOIN whoop_sleep_onset s
     ON s.wake_day = (m.eaten_at AT TIME ZONE 'Asia/Dubai')::date + 1

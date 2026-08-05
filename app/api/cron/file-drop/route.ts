@@ -199,7 +199,9 @@ async function processOneFile(
   try {
     bytes = await downloadFile(file.id)
   } catch (err) {
-    return await failFile(supabase, parser, folders, file, null, `download failed: ${(err as Error).message}`)
+    // Download failures are transient (network / 5xx / rate-limit) — leave
+    // the file in inbox for the next run rather than exiling a good file (L12).
+    return await failFile(supabase, parser, folders, file, null, `download failed: ${(err as Error).message}`, { transient: true })
   }
 
   // 2. Validate header — cheap reject of misfiled files (decision #8).
@@ -239,9 +241,11 @@ async function processOneFile(
     .single()
 
   if (logErr || !logRow) {
+    // DB-side insert failure is transient — leave the file in inbox (L12).
     return await failFile(
       supabase, parser, folders, file, summary,
-      `ingestion_log insert failed: ${logErr?.message ?? 'unknown'}`
+      `ingestion_log insert failed: ${logErr?.message ?? 'unknown'}`,
+      { transient: true }
     )
   }
   const logId = (logRow as { id: string }).id
@@ -249,9 +253,18 @@ async function processOneFile(
   // 5. Stamp ingestion_log_id on each row.
   const stamped = rows.map((r) => ({ ...r, ingestion_log_id: logId }))
 
+  // Which rows already exist? records_written must count only NEW rows (L3):
+  // re-dropping a processed file (or an Oxylink same-wake-date re-export)
+  // upserts the same ids, and counting batch size would report those as
+  // freshly written. One indexed lookup per batch of ids.
+  const existingIds = await fetchExistingObsIds(
+    supabase, parser.sourceSlug, stamped.map((r) => r.source_record_id)
+  )
+
   // 6. Batch upsert. All-or-nothing per call (gotcha #11) — rows are already
   //    validated by the parser, so batches should land cleanly.
   let written = 0
+  let reUpserted = 0
   const upsertErrors: string[] = []
   for (let i = 0; i < stamped.length; i += UPSERT_BATCH_SIZE) {
     const batch = stamped.slice(i, i + UPSERT_BATCH_SIZE)
@@ -261,12 +274,19 @@ async function processOneFile(
     if (error) {
       upsertErrors.push(`batch ${i}-${i + batch.length}: ${error.message}`)
     } else {
-      written += batch.length
+      for (const r of batch) {
+        if (existingIds.has(r.source_record_id)) reUpserted++
+        else written++
+      }
     }
   }
 
   if (upsertErrors.length > 0) {
-    // Update log to 'error' and move to failed/ so the file isn't lost.
+    // Upsert failures are DB-side and transient (connection/timeout) — the
+    // file parsed cleanly, so LEAVE it in inbox for the next run to retry
+    // rather than exiling a good file to failed/ (L12). Re-processing is safe:
+    // the upsert is idempotent on (source_slug, source_record_id), so already-
+    // written rows dedupe and only the failed batch is re-attempted.
     await supabase
       .from('ingestion_log')
       .update({
@@ -276,11 +296,10 @@ async function processOneFile(
         records_skipped: summary.skip_breakdown.sentinel
           + summary.skip_breakdown.out_of_range
           + summary.skip_breakdown.parse_errors,
-        error_detail: upsertErrors.join(' | ').slice(0, 500),
+        error_detail: `${upsertErrors.join(' | ').slice(0, 480)} (left in inbox for retry)`,
         completed_at: new Date().toISOString(),
       })
       .eq('id', logId)
-    const moved = await tryMove(file.id, folders.inbox, folders.failed)
     return {
       source: parser.sourceSlug,
       file: { id: file.id, name: file.name },
@@ -290,12 +309,15 @@ async function processOneFile(
       records_skipped: summary.skip_breakdown.sentinel + summary.skip_breakdown.out_of_range + summary.skip_breakdown.parse_errors,
       ingestion_log_id: logId,
       reason: upsertErrors.join(' | '),
-      moved_to: moved ? 'failed' : null,
+      moved_to: null,
     }
   }
 
-  // 7. Success — finalise log + move to processed/.
-  const skipped = summary.skip_breakdown.sentinel + summary.skip_breakdown.out_of_range + summary.skip_breakdown.parse_errors
+  // 7. Success — finalise log + move to processed/. Skipped = parse-level
+  //    skips PLUS any pre-existing rows the upsert re-touched (L3), so a
+  //    reprocessed file honestly reads written=0, skipped=N rather than
+  //    claiming it wrote rows it only re-confirmed.
+  const skipped = summary.skip_breakdown.sentinel + summary.skip_breakdown.out_of_range + summary.skip_breakdown.parse_errors + reUpserted
   await supabase
     .from('ingestion_log')
     .update({
@@ -323,6 +345,30 @@ async function processOneFile(
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Subset of `ids` already present in health_observations for this source, so
+ * records_written counts only new rows (L3). Chunked to the upsert batch size
+ * to keep the `.in()` filter bounded.
+ */
+async function fetchExistingObsIds(
+  supabase: ReturnType<typeof createServiceClient>,
+  sourceSlug: string,
+  ids: string[]
+): Promise<Set<string>> {
+  const existing = new Set<string>()
+  for (let i = 0; i < ids.length; i += UPSERT_BATCH_SIZE) {
+    const chunk = ids.slice(i, i + UPSERT_BATCH_SIZE)
+    const { data, error } = await supabase
+      .from('health_observations')
+      .select('source_record_id')
+      .eq('source_slug', sourceSlug)
+      .in('source_record_id', chunk)
+    if (error) throw new Error(`existing-id lookup failed: ${error.message}`)
+    for (const row of data ?? []) existing.add((row as { source_record_id: string }).source_record_id)
+  }
+  return existing
+}
+
 async function tryMove(fileId: string, from: string, to: string): Promise<boolean> {
   try {
     await moveFile(fileId, from, to)
@@ -337,21 +383,35 @@ async function tryMove(fileId: string, from: string, to: string): Promise<boolea
   }
 }
 
+/**
+ * Record a per-file failure. `transient` (L12) decides the file's fate:
+ *   - transient=false (default) — a GENUINE validation/parse failure: the
+ *     file is bad and will never succeed, so move it to failed/ to get it
+ *     out of the inbox.
+ *   - transient=true — a retryable error (Drive download hiccup, a DB
+ *     insert/upsert error): the file itself is fine, so LEAVE it in inbox
+ *     so the next cron run retries it. Moving a good file to failed/ on a
+ *     network blip permanently strands it (the old behaviour). Re-processing
+ *     is safe — the upsert is idempotent on (source_slug, source_record_id).
+ */
 async function failFile(
   supabase: ReturnType<typeof createServiceClient>,
   parser: FileDropParser,
   folders: SourceFolders,
   file: DriveFile,
   summary: { period_start?: string; period_end?: string; skip_breakdown?: { sentinel: number; out_of_range: number; parse_errors: number } } | null,
-  reason: string
+  reason: string,
+  opts: { transient?: boolean } = {}
 ): Promise<PerFileResult> {
+  const transient = opts.transient === true
   const logId = await writeFailureLog(supabase, parser.sourceSlug, {
     filename: file.name,
     drive_file_id: file.id,
-    reason,
+    reason: transient ? `${reason} (transient — left in inbox for retry)` : reason,
     summary,
   })
-  const moved = await tryMove(file.id, folders.inbox, folders.failed)
+  // Only banish genuinely-bad files. Transient failures stay in inbox.
+  const moved = transient ? false : await tryMove(file.id, folders.inbox, folders.failed)
   return {
     source: parser.sourceSlug,
     file: { id: file.id, name: file.name },

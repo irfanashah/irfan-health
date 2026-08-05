@@ -11,7 +11,16 @@ export async function getTokens(
     .eq('source_slug', sourceSlug)
     .maybeSingle()
 
-  if (error || !data) return null
+  // Distinguish a genuine "no row" (source not connected → null, the
+  // caller's "run the OAuth handshake" path is correct) from a query
+  // ERROR (transient DB outage, RLS, network). Collapsing both to null
+  // used to mislead a transient outage into a "not connected" remediation
+  // (L13). A query error must propagate so the run fails loudly + the
+  // ingestion_log records a real error, not a phantom "no tokens".
+  if (error) {
+    throw new Error(`Failed to read tokens for ${sourceSlug}: ${error.message}`)
+  }
+  if (!data) return null
 
   return {
     accessToken: data.access_token as string,

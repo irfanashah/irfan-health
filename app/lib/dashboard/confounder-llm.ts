@@ -121,7 +121,10 @@ List up to 6 plausible alternative explanations — confounders, mechanism candi
   }
 }
 
-/** Server-only convenience for the UI: whether the LLM expand button should render. */
-export async function llmConfoundersAvailable(): Promise<boolean> {
-  return !!process.env.ANTHROPIC_API_KEY
-}
+// NOTE (L17): a `llmConfoundersAvailable()` 'use server' export used to live
+// here — the one such export missing a `requireSession()` guard (gotcha #143).
+// It only disclosed whether ANTHROPIC_API_KEY was set and had NO callers:
+// `app/page.tsx` reads the flag directly from `process.env` in its own server
+// component. Removed rather than guarded — a guarded-but-unused RPC is still
+// dead surface area. If a client ever needs this, read it in a server
+// component (as page.tsx does), don't re-add an unguarded action.

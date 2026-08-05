@@ -183,7 +183,7 @@ function AnchorHistory({ anchors }: { anchors: AnchorRow[] }) {
               {a.active ? 'ACTIVE' : 'archived'}
             </span>
             <span>{a.source_start} → {a.source_end}</span>
-            <span className="muted-note">set {new Date(a.set_at).toLocaleDateString()}</span>
+            <span className="muted-note">set {new Date(a.set_at).toLocaleDateString([], { timeZone: 'Asia/Dubai' })}</span>
             {a.note && <span style={{ color: 'var(--text-muted)' }}>· {a.note}</span>}
           </li>
         ))}

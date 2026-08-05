@@ -21,7 +21,7 @@ interface Props {
 }
 
 function fmtWakeDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })
 }
 
 /**

@@ -9,9 +9,11 @@ import { describe, it, expect } from 'vitest'
 import {
   computeCgmFreshness,
   computeCgmWear,
+  computeCgmTrend,
   CGM_STALE_MINUTES,
   TIR_MIN_WEAR_HOURS,
   CGM_EXPECTED_INTERVAL_MIN,
+  CGM_TREND_THRESHOLD_MMOL_PER_MIN,
 } from './daily-metrics'
 
 describe('computeCgmFreshness', () => {
@@ -70,5 +72,68 @@ describe('computeCgmWear', () => {
     const result = computeCgmWear(0)
     expect(result.wearHours).toBe(0)
     expect(result.partial).toBe(true)
+  })
+})
+
+describe('computeCgmTrend (L7 — slope from real timestamps, not a fixed index)', () => {
+  // Threshold is 0.036 mmol/min (≈ the old 0.18-per-5min-interval sensitivity).
+  it('flat/empty series → flat, slope 0', () => {
+    expect(computeCgmTrend([])).toEqual({ trendDir: 'flat', slope: 0 })
+    expect(computeCgmTrend([{ time: '2026-07-06T12:00:00.000Z', mmol: 5.5 }]))
+      .toEqual({ trendDir: 'flat', slope: 0 })
+  })
+
+  it('uniform 5-min rising over 15 min → rising, slope in mmol/min', () => {
+    const pts = [
+      { time: '2026-07-06T12:00:00.000Z', mmol: 5.0 },
+      { time: '2026-07-06T12:05:00.000Z', mmol: 5.3 },
+      { time: '2026-07-06T12:10:00.000Z', mmol: 5.6 },
+      { time: '2026-07-06T12:15:00.000Z', mmol: 6.0 },
+    ]
+    // ref = first point ≥15 min old = 12:00. slope = (6.0-5.0)/15 = 0.0667.
+    const r = computeCgmTrend(pts)
+    expect(r.slope).toBeCloseTo(1.0 / 15, 5)
+    expect(r.trendDir).toBe('rising')
+    expect(r.slope).toBeGreaterThan(CGM_TREND_THRESHOLD_MMOL_PER_MIN)
+  })
+
+  it('uniform falling → falling', () => {
+    const pts = [
+      { time: '2026-07-06T12:00:00.000Z', mmol: 7.0 },
+      { time: '2026-07-06T12:05:00.000Z', mmol: 6.6 },
+      { time: '2026-07-06T12:10:00.000Z', mmol: 6.2 },
+      { time: '2026-07-06T12:15:00.000Z', mmol: 6.0 },
+    ]
+    // (6.0-7.0)/15 = -0.0667 < -0.036 → falling.
+    const r = computeCgmTrend(pts)
+    expect(r.slope).toBeCloseTo(-1.0 / 15, 5)
+    expect(r.trendDir).toBe('falling')
+  })
+
+  it('small change over 15 min → flat (below threshold)', () => {
+    const pts = [
+      { time: '2026-07-06T12:00:00.000Z', mmol: 6.0 },
+      { time: '2026-07-06T12:15:00.000Z', mmol: 6.3 },
+    ]
+    // (6.3-6.0)/15 = 0.02 mmol/min < 0.036 → flat.
+    const r = computeCgmTrend(pts)
+    expect(r.slope).toBeCloseTo(0.02, 5)
+    expect(r.trendDir).toBe('flat')
+  })
+
+  it('after a gap: slope uses the REAL elapsed minutes, not a fixed /3 index', () => {
+    // The old code did (last - points[len-4]) / 3, assuming 5-min spacing.
+    // Here the reference point is 20 min before the last reading (a gap), so
+    // the honest slope is Δ/20, not Δ/3. This is the L7 fix.
+    const pts = [
+      { time: '2026-07-06T10:00:00.000Z', mmol: 5.0 },
+      { time: '2026-07-06T11:55:00.000Z', mmol: 5.0 },
+      { time: '2026-07-06T12:15:00.000Z', mmol: 6.0 },
+    ]
+    // ref = first point ≥15 min old (walking newest→oldest) = 11:55 (20 min).
+    // slope = (6.0-5.0)/20 = 0.05 mmol/min. The old /3 would have given 0.333.
+    const r = computeCgmTrend(pts)
+    expect(r.slope).toBeCloseTo(0.05, 5)
+    expect(r.trendDir).toBe('rising') // 0.05 > 0.036
   })
 })

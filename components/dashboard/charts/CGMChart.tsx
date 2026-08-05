@@ -168,7 +168,7 @@ export function CGMChart({
         {/* x labels */}
         {xticks.map((i) => (
           <text key={'x' + i} x={xOf(i)} y={height - 8} textAnchor="middle" fontSize="10.5" fill="var(--text-dim)">
-            {data[i].time.toLocaleTimeString([], { hour: 'numeric' })}
+            {data[i].time.toLocaleTimeString([], { hour: 'numeric', timeZone: 'Asia/Dubai' })}
           </text>
         ))}
         {/* area + line */}

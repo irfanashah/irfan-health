@@ -45,6 +45,15 @@ AS $$
     UNION ALL SELECT date, 'glucose_var', glucose_var::numeric         FROM daily_metrics WHERE glucose_var IS NOT NULL AND date BETWEEN p_start AND p_end
     UNION ALL SELECT date, 'tir',         tir::numeric                 FROM daily_metrics WHERE tir         IS NOT NULL AND date BETWEEN p_start AND p_end
     UNION ALL SELECT date, 'weight',      weight::numeric              FROM daily_metrics WHERE weight      IS NOT NULL AND date BETWEEN p_start AND p_end
+    -- L1: the drift engine tracks 13 metrics but this helper was frozen at
+    -- the original 8, so SpO2 / ODI / time-below-90 / skin_temp could never
+    -- be anchored (they'd always fall back to the rolling baseline). Mirror
+    -- metric_drift's long_form (migration_004) so all 13 can freeze.
+    UNION ALL SELECT date, 'spo2_avg',           spo2_avg::numeric           FROM daily_metrics WHERE spo2_avg           IS NOT NULL AND date BETWEEN p_start AND p_end
+    UNION ALL SELECT date, 'spo2_min',           spo2_min::numeric           FROM daily_metrics WHERE spo2_min           IS NOT NULL AND date BETWEEN p_start AND p_end
+    UNION ALL SELECT date, 'spo2_odi',           spo2_odi::numeric           FROM daily_metrics WHERE spo2_odi           IS NOT NULL AND date BETWEEN p_start AND p_end
+    UNION ALL SELECT date, 'spo2_time_below_90', spo2_time_below_90::numeric FROM daily_metrics WHERE spo2_time_below_90 IS NOT NULL AND date BETWEEN p_start AND p_end
+    UNION ALL SELECT date, 'skin_temp',          skin_temp::numeric          FROM daily_metrics WHERE skin_temp          IS NOT NULL AND date BETWEEN p_start AND p_end
   ),
   filtered AS (
     SELECT lf.date, lf.metric, lf.value

@@ -23,7 +23,7 @@ function fmtAsOf(d: Date, today: Date): string {
   const days = Math.round((t.getTime() - that.getTime()) / 86400000)
   if (days === 0) return 'today'
   if (days === 1) return 'yesterday'
-  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Dubai' })
 }
 
 export function ReadinessPanel({ series }: Props) {

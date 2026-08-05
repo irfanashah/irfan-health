@@ -165,8 +165,19 @@ export const nightscoutAdapter: Adapter = {
 
       const recordsSkippedByFilter = filteredOutOfRange + filteredNonSgv
 
+      // Which planned rows already exist? `records_written` must count only
+      // GENUINELY-NEW rows (L3) — the cron re-fetches an overlapping window
+      // every run, so counting batch size would ~4× over-report writes. A
+      // Nightscout _id is immutable (same sgv forever), so pre-existing =
+      // skipped, absent = written. One indexed lookup per 200-id chunk.
+      const existingIds = await fetchExistingIds(
+        supabase,
+        planned.map((r) => r.source_record_id)
+      )
+
       // 5. Batch upsert. Idempotent via UNIQUE (source_slug, source_record_id).
-      let inserted = 0
+      let newWritten = 0
+      let reUpserted = 0 // pre-existing rows re-written by the idempotent upsert → counted as skipped
       const insertErrors: string[] = []
       for (let i = 0; i < planned.length; i += INSERT_BATCH_SIZE) {
         const batch = planned.slice(i, i + INSERT_BATCH_SIZE)
@@ -176,17 +187,17 @@ export const nightscoutAdapter: Adapter = {
             `batch ${i}-${i + batch.length}: ${result.error}`
           )
         } else {
-          inserted += batch.length
+          for (const r of batch) {
+            if (existingIds.has(r.source_record_id)) reUpserted++
+            else newWritten++
+          }
         }
       }
 
-      // Records skipped at the DB level (already present, upsert idempotent)
-      // are NOT counted here separately — Postgres treats them as part of the
-      // upsert. We expose what we filtered + an approximate "already in DB"
-      // figure (inserted vs planned) in the refill route. The cron just needs
-      // a status verdict.
-      const recordsWritten = inserted
-      const recordsSkipped = recordsSkippedByFilter
+      // Honest counts (L3): written = new rows only; skipped = filtered rows
+      // PLUS pre-existing rows the overlap re-touched.
+      const recordsWritten = newWritten
+      const recordsSkipped = recordsSkippedByFilter + reUpserted
 
       const status: 'success' | 'partial' | 'error' =
         insertErrors.length === 0
@@ -237,6 +248,29 @@ export const nightscoutAdapter: Adapter = {
       }
     }
   },
+}
+
+/**
+ * Return the subset of `ids` that already exist in health_observations for
+ * this source — so records_written counts only new rows (L3). Chunked to
+ * stay under the URL/row limits on the `.in()` filter.
+ */
+async function fetchExistingIds(
+  supabase: SupabaseClient,
+  ids: string[]
+): Promise<Set<string>> {
+  const existing = new Set<string>()
+  for (let i = 0; i < ids.length; i += INSERT_BATCH_SIZE) {
+    const chunk = ids.slice(i, i + INSERT_BATCH_SIZE)
+    const { data, error } = await supabase
+      .from('health_observations')
+      .select('source_record_id')
+      .eq('source_slug', SOURCE_SLUG)
+      .in('source_record_id', chunk)
+    if (error) throw new Error(`existing-id lookup failed: ${error.message}`)
+    for (const row of data ?? []) existing.add((row as { source_record_id: string }).source_record_id)
+  }
+  return existing
 }
 
 async function batchUpsertObservations(
