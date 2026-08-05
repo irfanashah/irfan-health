@@ -129,7 +129,7 @@ function PanelsCard({ panels }: { panels: LabPanelRow[] }) {
       />
       {panels.length === 0 ? (
         <div className="empty-note">
-          No lab panels imported yet. Upload a PDF via the <a href="/labs">labs import tool</a> to start.
+          No lab panels imported yet. Upload a PDF via the <a href="/labs">labs import tool</a> (under Diagnostics) to start.
         </div>
       ) : (
         <ul className="labs-tab-panels">
@@ -426,7 +426,7 @@ export function LabsTab({ panels, trends }: Props) {
           <p className="section-sub">
             Cardiac key markers (★) trended across every draw with clinical-target tracking; imported
             panels listed chronologically with out-of-range flagging. Import new reports via the{' '}
-            <a href="/labs">labs upload tool</a> — they appear here once committed.
+            <a href="/labs">labs upload tool</a> (under Diagnostics) — they appear here once committed.
           </p>
         </div>
       </div>

@@ -36,6 +36,20 @@ export default async function DiagnosticsPage() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         <section>
+          <h2 className="text-base font-semibold text-foreground mb-2">Lab report import</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Upload a lab-report PDF (bloodwork panel or discharge summary) → AI extraction → review every
+            value → commit. Committed panels are trended in the dashboard <strong>Labs</strong> tab.
+          </p>
+          <Link
+            href="/labs"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors"
+          >
+            Open lab import tool →
+          </Link>
+        </section>
+
+        <section>
           <h2 className="text-base font-semibold text-foreground mb-2">Pipeline health</h2>
           <p className="text-sm text-muted-foreground mb-4">
             API-pull crons (Whoop / Withings / Nightscout). Stale = no <code>status=&apos;success&apos;</code> row within the per-source threshold (≈ 2–3× the cron interval).
