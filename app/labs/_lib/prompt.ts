@@ -49,6 +49,7 @@ The contract: values are sacred; context is suggested.
 DOCUMENT TYPES YOU MUST HANDLE:
 - Clean blood-panel lab reports (tables of markers + results + ref ranges).
 - Larger clinical documents — discharge summaries, consultation notes, admission records, progress notes — where lab results sit EMBEDDED among narrative.
+- Echocardiogram / TTE (transthoracic echo) reports — M-Mode / 2D / Doppler measurement tables plus a findings/conclusion narrative. See the ECHOCARDIOGRAM section below.
 Extract ALL lab/test results, however presented (tables, inline sentences, bulleted lists, "Investigations" sections). IGNORE non-lab narrative — diagnoses, medications, treatment plans, course-of-stay, recommendations, free-text impressions. None of those become marker rows.
 
 ────────────────────────────────────────────────────────────────────
@@ -90,6 +91,29 @@ FORMAT-AGNOSTIC EXTRACTION
 - Skip headers / footers / page numbers / patient demographics / report-generation timestamps.
 
 ────────────────────────────────────────────────────────────────────
+ECHOCARDIOGRAM / TTE REPORTS
+────────────────────────────────────────────────────────────────────
+An echo report lists cardiac measurements (M-Mode / 2D / Doppler) — treat each numeric measurement as a marker row, EXACTLY like a blood result: value + unit verbatim (Job 1), canonical slug + proposed range (Job 2). JOB 1 IS STILL SACRED — never invent an echo number.
+
+- UNITS VERBATIM. Chamber/wall dimensions may be printed in cm (e.g. Fakeeh) OR mm (e.g. AFIC) — record the unit exactly as printed ("cm" or "mm"). DO NOT convert (the app converts mm→cm deterministically downstream). Velocities m/s, gradients/pressures mmHg, times ms, ratios unitless.
+- Map each lab's naming to the canonical slug (both spellings map to the same slug — the app remembers per-lab names after the first commit):
+  - Ejection Fraction / EF / LVEF → ef
+  - IVSd / Septal Thickness / Septal Thickness at R Wave / IVS → ivsd
+  - LVPWd / PW / Posterior Wall / PW diastole → lvpwd
+  - LVIDd / LV Diastolic Diameter / Diastolic Diameter / LVEDD → lvidd
+  - LVIDs / LV Systolic Diameter / Systolic Diameter / LVESD → lvids
+  - LA / LA diameter / Left Atrium / Aortic root+LA pair (the LA one) → la_diameter
+  - Aortic root / AO / Aortic Root Diameter → aortic_root
+  - LVOT → lvot ; TAPSE → tapse
+  - Mitral E velocity → mv_e_vel ; Mitral A velocity → mv_a_vel ; E/A → e_a_ratio ; E/e′ (E/Ea, E/E') → e_e_prime
+  - Aortic valve velocity / AV Vmax → aortic_vel ; Deceleration time / Dec-T → deceleration_time ; IVRT → ivrt
+  - TR peak gradient / TR PG → tr_pg ; RV/PA pressure / RVSP / PASP → rvsp ; Fractional shortening / FS → fractional_shortening
+- A measurement reported as a RANGE (e.g. EF "55–60%") → store its MIDPOINT in numeric_value (57.5), keep the original "55–60%" in text_value, and add a per-row note "reported as a range". A single number → store as-is.
+- QUALITATIVE FINDINGS ARE NOT MARKER ROWS. The findings/conclusion narrative — LV size + systolic function, LVH (concentric/eccentric), diastolic-dysfunction grade, RWMA / regional wall-motion, valve regurgitation grades (MR/AR/TR trace/mild/moderate), pericardial effusion — go into the PANEL notes field as a short summary. NEVER fabricate a number for a qualitative finding (do not turn "mild MR" into a value). (Ordinal grading of regurgitation for a numeric trend is out of scope for now.)
+- Proposed standard ranges (Job 2, only when the report didn't print one) — use these widely-accepted adult echo ranges, expressed in the CANONICAL unit (cm for dimensions): ef ≥55% (55–75); ivsd/lvpwd 0.6–1.2 cm; lvidd 3.5–5.6 cm; lvids 2.5–4.1 cm; la_diameter 1.5–4.0 cm; aortic_root 2.0–3.7 cm; tapse ≥1.7 cm; e_a_ratio 1–2; e_e_prime <8. If the report DID print a range (AFIC prints them, often in mm), keep it as the reported range in the printed unit (range_source='reported') — do not convert.
+- drawn_at = the STUDY date (the echo date).
+
+────────────────────────────────────────────────────────────────────
 DATE INTERPRETATION
 ────────────────────────────────────────────────────────────────────
 - Many labs use DD/MM/YYYY (day-first); some US labs use MM/DD/YYYY. Look at the report's context — lab name, hospital location, other written dates ("April 29 2026"), and impossible day values (> 12 in the first position rules out month-first).
@@ -107,7 +131,7 @@ OUTPUT:
 export const EXTRACT_TOOL = {
   name: 'extract_lab_panel',
   description:
-    'Submit the structured extraction of a blood-panel lab report. Call this tool exactly once with all data found across the entire document.',
+    'Submit the structured extraction of a lab or cardiac-imaging report (blood panel, discharge summary, or echocardiogram/TTE). Call this tool exactly once with all data found across the entire document.',
   input_schema: {
     type: 'object',
     required: ['panel', 'values', 'dateAmbiguous'],

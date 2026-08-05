@@ -10,6 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { ANTHROPIC_MODEL, EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt'
+import { reportedRangeMidpoint } from './markers'
 import type { ExtractionDraft, ExtractionPath, DraftValue } from './types'
 
 // Heuristic: a usable text layer should yield SOMETHING substantive.
@@ -143,10 +144,28 @@ function normaliseDraft(raw: unknown, path: ExtractionPath): ExtractionDraft {
         // remembered range, so a remembered overlay refreshes the flag.
         const finalFlag = labFlag ?? validFlag(v.proposed_flag)
 
+        // Headline-value-as-a-range fallback: a measurement reported as a
+        // range (e.g. an EF printed "55–60%") should trend as its midpoint.
+        // The prompt asks the model to do this, but if it leaves the range
+        // in text_value with no numeric_value, derive the midpoint here and
+        // note it — the original text stays for review (gotcha #167).
+        let numericValue = num(v.numeric_value)
+        const textValue = str(v.text_value)
+        let midpointNote: string | null = null
+        if (numericValue === null && textValue) {
+          const mid = reportedRangeMidpoint(textValue)
+          if (mid !== null) {
+            numericValue = mid
+            midpointNote = `reported as a range "${textValue}" → stored midpoint ${mid}`
+          }
+        }
+        const baseNote = str(v.notes)
+        const notes = [baseNote, midpointNote].filter(Boolean).join(' · ') || null
+
         return {
           raw_marker_name: String(v.raw_marker_name ?? '').trim(),
-          numeric_value: num(v.numeric_value),
-          text_value: str(v.text_value),
+          numeric_value: numericValue,
+          text_value: textValue,
           unit: str(v.unit),
           ref_low: refLow,
           ref_high: refHigh,
@@ -157,7 +176,7 @@ function normaliseDraft(raw: unknown, path: ExtractionPath): ExtractionDraft {
           critical_high: num(v.proposed_critical_high),
           flag: finalFlag,
           suggested_marker_slug: str(v.suggested_marker_slug),
-          notes: str(v.notes),
+          notes,
         }
       })
     : []

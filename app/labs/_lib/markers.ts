@@ -29,6 +29,12 @@ export interface MarkerDef {
   display: string
   canonicalUnit: string | null
   keyMarker: boolean
+  /**
+   * Marker family — controls how the Labs tab GROUPS the trend cards.
+   * 'blood' = standard blood-panel markers (default when omitted).
+   * 'echo'  = echocardiogram / TTE measurements (own section, cm units).
+   */
+  category?: 'blood' | 'echo'
   /** Convert (value, reportedUnit) → canonical_value. Return null if unit unknown. */
   convert?: (value: number, reportedUnit: string) => number | null
 }
@@ -62,6 +68,39 @@ const hsCrpConvert = (v: number, u: string): number | null => {
 const identity = (canonical: string) => (v: number, u: string): number | null => {
   if (norm(u) === norm(canonical)) return v
   return null
+}
+
+// ─── Echo (TTE) unit converts ───────────────────────────────────────────────
+// Chamber/wall dimensions come in cm (Fakeeh) OR mm (AFIC) depending on the
+// lab. Canonical is cm; mm ÷ 10. cm passes through unchanged (gotcha #167).
+const dimensionConvert = (v: number, u: string): number | null => {
+  const n = norm(u)
+  if (n === 'cm') return round2(v)
+  if (n === 'mm') return round2(v / 10)
+  return null
+}
+// Doppler velocities: canonical m/s; some labs print cm/s (÷100).
+const velocityConvert = (v: number, u: string): number | null => {
+  const n = norm(u)
+  if (n === 'm/s') return round2(v)
+  if (n === 'cm/s') return round2(v / 100)
+  return null
+}
+
+/**
+ * Midpoint of a reported numeric range string like "55-60" / "55–60%" /
+ * "55 to 60" → 57.5. Returns null for a single number or non-numeric text,
+ * so it only ever fires on a genuine range (gotcha #167). Used by the
+ * extractor to store a headline value (e.g. an EF reported as "55–60%") as
+ * its midpoint while keeping the original text for review.
+ */
+export function reportedRangeMidpoint(text: string): number | null {
+  const m = text.match(/^\s*(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*%?\s*$/i)
+  if (!m) return null
+  const lo = Number(m[1])
+  const hi = Number(m[2])
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null
+  return round2((lo + hi) / 2)
 }
 
 function round2(v: number): number { return Math.round(v * 100) / 100 }
@@ -111,6 +150,33 @@ export const MARKER_REGISTRY: MarkerDef[] = [
   { slug: 'calcium',           display: 'Calcium',            canonicalUnit: 'mmol/L', keyMarker: false, convert: identity('mmol/L') },
   { slug: 'magnesium',         display: 'Magnesium',          canonicalUnit: 'mmol/L', keyMarker: false, convert: identity('mmol/L') },
   { slug: 'phosphate',         display: 'Phosphate',          canonicalUnit: 'mmol/L', keyMarker: false, convert: identity('mmol/L') },
+
+  // ─── Echocardiogram / TTE (category:'echo' — own Labs-tab section) ─────
+  // Dimensions canonical in cm (mm ÷ 10). EF is the headline (%). Velocities
+  // m/s, ratios unitless, times ms, gradients/pressures mmHg. keyMarker =
+  // the clinically-important both-report ones (per spec).
+  { slug: 'ef',                display: 'Ejection fraction',  canonicalUnit: '%',   keyMarker: true,  category: 'echo', convert: identity('%') },
+  { slug: 'ivsd',              display: 'IVSd (septal wall)', canonicalUnit: 'cm',  keyMarker: true,  category: 'echo', convert: dimensionConvert },
+  { slug: 'lvpwd',             display: 'LVPWd (posterior wall)', canonicalUnit: 'cm', keyMarker: true, category: 'echo', convert: dimensionConvert },
+  { slug: 'lvidd',             display: 'LVIDd (LV diastolic)', canonicalUnit: 'cm', keyMarker: true, category: 'echo', convert: dimensionConvert },
+  { slug: 'lvids',             display: 'LVIDs (LV systolic)', canonicalUnit: 'cm', keyMarker: true,  category: 'echo', convert: dimensionConvert },
+  { slug: 'la_diameter',       display: 'LA diameter',        canonicalUnit: 'cm',  keyMarker: true,  category: 'echo', convert: dimensionConvert },
+  { slug: 'aortic_root',       display: 'Aortic root',        canonicalUnit: 'cm',  keyMarker: false, category: 'echo', convert: dimensionConvert },
+  { slug: 'lvot',              display: 'LVOT diameter',      canonicalUnit: 'cm',  keyMarker: false, category: 'echo', convert: dimensionConvert },
+  { slug: 'tapse',             display: 'TAPSE',              canonicalUnit: 'cm',  keyMarker: false, category: 'echo', convert: dimensionConvert },
+  { slug: 'mv_e_vel',          display: 'Mitral E velocity',  canonicalUnit: 'm/s', keyMarker: false, category: 'echo', convert: velocityConvert },
+  { slug: 'mv_a_vel',          display: 'Mitral A velocity',  canonicalUnit: 'm/s', keyMarker: false, category: 'echo', convert: velocityConvert },
+  { slug: 'aortic_vel',        display: 'Aortic valve velocity', canonicalUnit: 'm/s', keyMarker: false, category: 'echo', convert: velocityConvert },
+  // Ratios are unitless → canonicalUnit null so the trend reader uses the
+  // reported numeric value directly (no unit to match). e_e_prime is the
+  // diastolic-function headline → key.
+  { slug: 'e_a_ratio',         display: 'E/A ratio',          canonicalUnit: null,  keyMarker: false, category: 'echo' },
+  { slug: 'e_e_prime',         display: 'E/e′ ratio',         canonicalUnit: null,  keyMarker: true,  category: 'echo' },
+  { slug: 'deceleration_time', display: 'Deceleration time',  canonicalUnit: 'ms',  keyMarker: false, category: 'echo', convert: identity('ms') },
+  { slug: 'ivrt',              display: 'IVRT',               canonicalUnit: 'ms',  keyMarker: false, category: 'echo', convert: identity('ms') },
+  { slug: 'tr_pg',             display: 'TR peak gradient',   canonicalUnit: 'mmHg', keyMarker: false, category: 'echo', convert: identity('mmHg') },
+  { slug: 'rvsp',              display: 'RV systolic pressure (RVSP)', canonicalUnit: 'mmHg', keyMarker: false, category: 'echo', convert: identity('mmHg') },
+  { slug: 'fractional_shortening', display: 'Fractional shortening', canonicalUnit: '%', keyMarker: false, category: 'echo', convert: identity('%') },
 ]
 
 const BY_SLUG = new Map(MARKER_REGISTRY.map((m) => [m.slug, m]))
@@ -120,6 +186,26 @@ export function getMarker(slug: string): MarkerDef | undefined {
 }
 
 export const KEY_MARKER_SLUGS = MARKER_REGISTRY.filter((m) => m.keyMarker).map((m) => m.slug)
+
+/** A marker's family; defaults to 'blood' for entries without an explicit category. */
+export function markerCategory(slug: string): 'blood' | 'echo' {
+  return BY_SLUG.get(slug)?.category ?? 'blood'
+}
+
+/** Echo slugs in registry order (EF first — it's declared first in the echo block). */
+export const ECHO_SLUGS: readonly string[] = MARKER_REGISTRY
+  .filter((m) => m.category === 'echo')
+  .map((m) => m.slug)
+
+/** Blood key-marker slugs — the existing "Key-marker trends" section (echo is grouped separately). */
+export const KEY_BLOOD_SLUGS: readonly string[] = MARKER_REGISTRY
+  .filter((m) => m.keyMarker && (m.category ?? 'blood') === 'blood')
+  .map((m) => m.slug)
+
+/** Echo key-marker slugs, EF first — the Echocardiogram section's hero + chamber cards. */
+export const KEY_ECHO_SLUGS: readonly string[] = MARKER_REGISTRY
+  .filter((m) => m.keyMarker && m.category === 'echo')
+  .map((m) => m.slug)
 
 /**
  * Apply the canonical unit + conversion (if any) to a reported value.

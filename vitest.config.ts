@@ -18,6 +18,7 @@ export default defineConfig({
         'components/dashboard/thresholds.ts',
         'app/labs/_lib/targets.ts',
         'app/labs/_lib/ranges.ts',
+        'app/labs/_lib/markers.ts',
         'app/log/_lib/glucose.ts',
         'adapters/file-drop/oxylink/parser.ts',
         'adapters/file-drop/contour/parser.ts',

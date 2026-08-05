@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, TestTube, LineChart } from 'lucide-react'
 import { Card } from './ui/Card'
 import { PanelHeader } from './ui/PanelHeader'
 import { TrendChart } from './charts/TrendChart'
-import { getMarker, KEY_MARKER_SLUGS } from '@/app/labs/_lib/markers'
+import { getMarker, markerCategory, KEY_MARKER_SLUGS, KEY_BLOOD_SLUGS, KEY_ECHO_SLUGS } from '@/app/labs/_lib/markers'
 import type { LabPanelRow, LabValueRow, MarkerTrend, MarkerTrendPoint } from '@/app/labs/actions'
 import {
   evaluateLabMarker,
@@ -233,7 +233,7 @@ function PanelsCard({ panels }: { panels: LabPanelRow[] }) {
 
 // ─── A single trend card (one canonical marker) ─────────────────────────
 
-function TrendCard({ trend }: { trend: MarkerTrend }) {
+function TrendCard({ trend, wide = false }: { trend: MarkerTrend; wide?: boolean }) {
   const def = getMarker(trend.marker_slug)
   const status = LAB_TARGETS[trend.marker_slug] ? evaluateLabMarker(trend) : null
   const unit = status?.unit || trend.canonical_unit || trend.points[trend.points.length - 1]?.unit || ''
@@ -266,7 +266,7 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
   }
 
   return (
-    <Card className="col-6">
+    <Card className={wide ? 'col-12' : 'col-6'}>
       <PanelHeader
         icon={<LineChart size={16} />}
         title={`${def?.display ?? trend.marker_slug}${isKey ? ' ★' : ''}`}
@@ -385,15 +385,28 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
 
 export function LabsTab({ panels, trends }: Props) {
   const trendsBySlug = useMemo(() => new Map(trends.map((t) => [t.marker_slug, t])), [trends])
-  const keyTrends = KEY_MARKER_SLUGS
+  // Blood key-marker trends only — echo keys are grouped into their own
+  // Echocardiogram section below (category-based split, not keyMarker alone).
+  const keyTrends = KEY_BLOOD_SLUGS
+    .map((s) => trendsBySlug.get(s))
+    .filter((t): t is MarkerTrend => t !== undefined)
+  // Echo key markers, EF first. Single-draw echo markers (e.g. April-only
+  // E/e′) still render — TrendChart draws a labelled dot (sparse-safe).
+  const echoTrends = KEY_ECHO_SLUGS
     .map((s) => trendsBySlug.get(s))
     .filter((t): t is MarkerTrend => t !== undefined)
   // Non-key markers with ≥2 draws are pickable via the dropdown — sparse
   // single-draw markers stay only in the panels list (a single dot trend
-  // isn't useful and would clutter).
+  // isn't useful and would clutter). Covers non-key echo markers too.
   const pickable = trends.filter(
     (t) => !KEY_MARKER_SLUGS.includes(t.marker_slug) && t.points.length >= 2
   )
+  // Echo findings — the qualitative narrative committed into each echo
+  // panel's notes (LVH, diastolic-dysfunction grade, RWMA, valve grades).
+  // An echo panel = one whose committed values include ≥1 echo-category marker.
+  const echoFindings = panels
+    .filter((p) => p.notes && p.values.some((v) => markerCategory(v.marker_slug) === 'echo'))
+    .map((p) => ({ id: p.id, drawnAt: p.drawn_at, lab: p.lab_name, notes: p.notes! }))
   const [pickedSlug, setPickedSlug] = useState<string>('')
   const picked = pickedSlug ? trendsBySlug.get(pickedSlug) ?? null : null
 
@@ -474,6 +487,45 @@ export function LabsTab({ panels, trends }: Props) {
           </Card>
         ) : (
           keyTrends.map((t) => <TrendCard key={t.marker_slug} trend={t} />)
+        )}
+
+        {echoTrends.length > 0 && (
+          <>
+            <div className="section-divider tabhead col-12">
+              <div className="section-head">
+                <span className="section-kicker" style={{ color: 'var(--purple)' }}>
+                  Echocardiogram
+                </span>
+                <h2 className="section-title">Cardiac imaging &amp; trends</h2>
+                <p className="section-sub">
+                  TTE measurements trended across studies. Ejection fraction is the headline;
+                  chamber &amp; wall dimensions are shown in cm (mm reports normalised). Normal
+                  bands are provisional — confirm with Dr. Jose.
+                </p>
+              </div>
+            </div>
+            {echoTrends.map((t) => (
+              <TrendCard key={t.marker_slug} trend={t} wide={t.marker_slug === 'ef'} />
+            ))}
+            {echoFindings.length > 0 && (
+              <Card className="col-12">
+                <PanelHeader
+                  icon={<TestTube size={18} />}
+                  title="Echo findings (qualitative)"
+                  accent="var(--purple)"
+                />
+                <ul className="labs-tab-echo-findings">
+                  {echoFindings.map((f) => (
+                    <li key={f.id} className="labs-tab-echo-finding">
+                      <span className="labs-tab-echo-finding-date">{fmtDate(f.drawnAt)}</span>
+                      {f.lab && <span className="labs-tab-echo-finding-lab">{f.lab}</span>}
+                      <span className="labs-tab-echo-finding-text">{f.notes}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </>
         )}
 
         {pickable.length > 0 && (

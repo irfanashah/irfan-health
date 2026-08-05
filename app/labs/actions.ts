@@ -272,6 +272,7 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
     //    slug land as 'unmapped' so they're trivial to query + re-map later.
     const valueRows = payload.values.map((v) => {
       const slug = v.confirmed_marker_slug?.trim() || 'unmapped'
+      const def = slug !== 'unmapped' ? getMarker(slug) : undefined
       const { canonical_value, canonical_unit } =
         slug !== 'unmapped' && v.numeric_value !== null
           ? toCanonical(slug, v.numeric_value, v.unit)
@@ -283,6 +284,28 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
               (v.ref_low !== null || v.ref_high !== null)
             ? 'standard'
             : null
+
+      // Echo dimensions come in cm OR mm depending on the lab. The value is
+      // canonicalised to cm above; canonicalise the REPORTED ref band the
+      // same way (via the marker's own convert on the value's unit) so the
+      // trend band and the value share one unit (cm). ECHO ONLY — blood ref
+      // ranges are left as printed (that unit-mismatch is a separate backlog
+      // item, M8). If the unit is unknown the convert returns null and we
+      // keep the printed range rather than guessing (gotcha #167).
+      let refLow = v.ref_low
+      let refHigh = v.ref_high
+      let refUnit = v.ref_unit
+      if (def?.category === 'echo' && def.convert && def.canonicalUnit && v.unit) {
+        const cLow = v.ref_low !== null ? def.convert(v.ref_low, v.unit) : null
+        const cHigh = v.ref_high !== null ? def.convert(v.ref_high, v.unit) : null
+        const converted = (v.ref_low !== null && cLow !== null) || (v.ref_high !== null && cHigh !== null)
+        if (converted) {
+          refLow = v.ref_low !== null ? cLow : null
+          refHigh = v.ref_high !== null ? cHigh : null
+          refUnit = def.canonicalUnit
+        }
+      }
+
       return {
         panel_id: panelId,
         marker_slug: slug,
@@ -292,9 +315,9 @@ export async function commitPanel(payload: CommitPayload): Promise<CommitResult 
         unit: v.unit,
         canonical_value,
         canonical_unit,
-        ref_low: v.ref_low,
-        ref_high: v.ref_high,
-        ref_unit: v.ref_unit,
+        ref_low: refLow,
+        ref_high: refHigh,
+        ref_unit: refUnit,
         ref_source: refSource,
         flag: v.flag,
       }

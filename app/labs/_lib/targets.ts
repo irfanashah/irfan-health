@@ -153,6 +153,20 @@ export const LAB_TARGETS: Record<string, LabTarget> = {
     modifiable: false,
     provisional: true,
   },
+  // Echo: ejection fraction is the one echo marker with a real clinical
+  // goal — "preserved" LV systolic function is ≥ 50%. 'higher' direction;
+  // 40–49% is the "mildly reduced" near band (nearBuffer 10 → near down to
+  // 40), < 40% off-goal. Provisional pending Dr. Jose like the rest.
+  ef: {
+    slug: 'ef',
+    goalDirection: 'higher',
+    target: 50,
+    unit: '%',
+    nearBuffer: 10,
+    label: '≥ 50% (preserved LV systolic function)',
+    modifiable: true,
+    provisional: true,
+  },
 }
 
 export const CARDIAC_TARGET_SLUGS = Object.keys(LAB_TARGETS)
