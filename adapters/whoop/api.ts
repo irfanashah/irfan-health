@@ -67,6 +67,13 @@ export async function refreshAccessToken(
     refresh_token: tokens.refreshToken,
     client_id: process.env.WHOOP_CLIENT_ID!,
     client_secret: process.env.WHOOP_CLIENT_SECRET!,
+    // REQUIRED so Whoop ROTATES + returns a new refresh_token in the response
+    // (gotcha #168). Whoop refresh tokens are single-use; the original grant
+    // requested `offline`, and the refresh must echo it or the response omits
+    // refresh_token — and we'd then overwrite our good token with undefined,
+    // so the NEXT refresh sends refresh_token=undefined → 400 invalid_request,
+    // permanently, until a manual re-auth.
+    scope: 'offline',
   })
 
   const response = await fetch(WHOOP_TOKEN_URL, {
@@ -77,18 +84,26 @@ export async function refreshAccessToken(
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(`Token refresh failed (${response.status}): ${text}`)
+    // Actionable message: a failed refresh means the stored refresh token is
+    // invalid/expired/revoked — no code path can revive it; Whoop must be
+    // re-connected. Surfaced by the diagnose route + the pipeline-health cron.
+    throw new Error(
+      `Whoop token refresh failed (${response.status}) — the stored refresh token is invalid or expired. ` +
+      `Re-connect Whoop by opening /api/auth/whoop while signed in. Details: ${text.slice(0, 200)}`
+    )
   }
 
   const json = (await response.json()) as {
     access_token: string
-    refresh_token: string
+    refresh_token?: string
     expires_in: number
   }
 
   const updated: OAuthTokens = {
     accessToken: json.access_token,
-    refreshToken: json.refresh_token,
+    // Keep the existing refresh token if Whoop didn't return a new one — never
+    // overwrite a good token with undefined (gotcha #168).
+    refreshToken: json.refresh_token ?? tokens.refreshToken,
     expiresAt: new Date(Date.now() + json.expires_in * 1000),
   }
 

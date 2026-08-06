@@ -112,15 +112,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Fetch from Whoop (no writes) ───────────────────────────────────────────
 
-  const tokens = await getTokens(supabase, 'whoop')
+  let tokens
+  try {
+    tokens = await getTokens(supabase, 'whoop')
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Could not read Whoop tokens: ${(err as Error).message}` },
+      { status: 502 }
+    )
+  }
   if (!tokens) {
     return NextResponse.json(
-      { error: 'No Whoop tokens in oauth_tokens. Run handshake first.' },
+      { error: 'Whoop not connected — open /api/auth/whoop while signed in to authorise.' },
       { status: 400 }
     )
   }
 
-  const fresh = await ensureFreshToken(supabase, tokens)
+  // Token refresh can fail (expired/revoked/invalid refresh token). Catch it
+  // here so it returns a clean, actionable 502 instead of an uncaught 500
+  // with a raw stack — the refresh happens BEFORE the fetch try/catch below.
+  let fresh
+  try {
+    fresh = await ensureFreshToken(supabase, tokens)
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 })
+  }
 
   let cycles: WhoopCycleRecord[]
   let recoveries: WhoopRecoveryRecord[]

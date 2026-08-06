@@ -78,14 +78,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now()
 
   // ── 1. Auth + fetch from Whoop ─────────────────────────────────────────────
-  const tokens = await getTokens(supabase, 'whoop')
+  let tokens
+  try {
+    tokens = await getTokens(supabase, 'whoop')
+  } catch (err) {
+    return NextResponse.json({ error: `Could not read Whoop tokens: ${(err as Error).message}` }, { status: 502 })
+  }
   if (!tokens) {
     return NextResponse.json(
-      { error: 'No Whoop tokens. Run handshake first.' },
+      { error: 'Whoop not connected — open /api/auth/whoop while signed in to authorise.' },
       { status: 400 }
     )
   }
-  const fresh = await ensureFreshToken(supabase, tokens)
+  // Clean, actionable error on a failed token refresh instead of an uncaught
+  // 500 — the refresh runs before the fetch try/catch below (gotcha #168).
+  let fresh
+  try {
+    fresh = await ensureFreshToken(supabase, tokens)
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 })
+  }
 
   // Widen the cycles fetch backwards by 14 days. Some recoveries inside our
   // requested window link to cycles whose start fell just before `fromDate`
