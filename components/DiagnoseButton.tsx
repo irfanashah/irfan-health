@@ -57,6 +57,102 @@ interface NightscoutDiagnoseResult {
 
 type Status = 'idle' | 'running' | 'done' | 'error'
 
+// ─── Reconcile now ─────────────────────────────────────────────────────────
+// A gap means the source has rows the DB doesn't. The refill route already
+// fixes that — full-history ID-diff, idempotent upsert of only the missing
+// rows — it just had no UI (you'd have to curl it). This button POSTs to it
+// over the SAME window the diagnose just examined and reports what it wrote.
+
+interface RefillResponse {
+  planned?: number
+  existingInDb?: number
+  missingBeforeInsert?: number
+  inserted?: number
+  status?: 'success' | 'partial' | 'error'
+  error?: string
+}
+
+function ReconcileButton({
+  source,
+  windowStart,
+  windowEnd,
+  gap,
+}: {
+  source: 'whoop' | 'withings' | 'nightscout'
+  windowStart: string
+  windowEnd: string
+  gap: number
+}) {
+  const [state, setState] = useState<{ status: Status; message?: string; ok?: boolean }>({
+    status: 'idle',
+  })
+
+  async function run() {
+    setState({ status: 'running' })
+    try {
+      const res = await fetch(`/api/refill/${source}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Reconcile exactly the window the diagnose examined.
+        body: JSON.stringify({ fromDate: windowStart, toDate: windowEnd }),
+      })
+      const text = await res.text()
+      let json: RefillResponse | null = null
+      try {
+        json = JSON.parse(text) as RefillResponse
+      } catch {
+        /* non-JSON body */
+      }
+      if (!res.ok) {
+        setState({
+          status: 'error',
+          ok: false,
+          message: json?.error ?? `HTTP ${res.status}: ${text.slice(0, 200)}`,
+        })
+        return
+      }
+      const inserted = json?.inserted ?? 0
+      const existing = json?.existingInDb
+      setState({
+        status: 'done',
+        ok: true,
+        message:
+          `Wrote ${inserted} missing row${inserted === 1 ? '' : 's'}` +
+          (existing != null ? ` · ${existing} already present` : '') +
+          '. Re-run Diagnose to confirm the gap closed.',
+      })
+    } catch (err) {
+      setState({ status: 'error', ok: false, message: (err as Error).message })
+    }
+  }
+
+  const running = state.status === 'running'
+  return (
+    <div className="mt-2">
+      <button
+        onClick={run}
+        disabled={running}
+        className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-md text-xs font-medium disabled:opacity-50"
+        title={`Fetch the full window from ${source} and upsert only the rows missing from the DB (idempotent).`}
+      >
+        {running
+          ? 'Reconciling…'
+          : gap > 0
+            ? `Reconcile now — fill ${gap} missing`
+            : 'Reconcile now'}
+      </button>
+      {state.status === 'done' && (
+        <div className={`text-xs mt-1 ${state.ok ? 'text-accent-teal' : 'text-destructive'}`}>
+          {state.message}
+        </div>
+      )}
+      {state.status === 'error' && (
+        <div className="text-xs mt-1 text-destructive">Reconcile failed: {state.message}</div>
+      )}
+    </div>
+  )
+}
+
 export function DiagnoseButton() {
   const [status, setStatus] = useState<Status>('idle')
   const [whoopResult, setWhoopResult] = useState<WhoopDiagnoseResult | null>(
@@ -259,6 +355,13 @@ function WhoopPanel({ result }: { result: WhoopDiagnoseResult }) {
         </span>
       </div>
 
+      <ReconcileButton
+        source="whoop"
+        windowStart={result.windowStart}
+        windowEnd={result.windowEnd}
+        gap={result.totalGap}
+      />
+
       <details className="mt-2">
         <summary className="cursor-pointer text-foreground">
           Per-metric breakdown
@@ -334,6 +437,13 @@ function WithingsPanel({ result }: { result: WithingsDiagnoseResult }) {
         </span>
       </div>
 
+      <ReconcileButton
+        source="withings"
+        windowStart={result.windowStart}
+        windowEnd={result.windowEnd}
+        gap={result.gap}
+      />
+
       {totalSkipped > 0 && (
         <details className="mt-2">
           <summary className="cursor-pointer text-foreground">
@@ -385,6 +495,13 @@ function NightscoutPanel({ result }: { result: NightscoutDiagnoseResult }) {
           {result.gap}
         </span>
       </div>
+
+      <ReconcileButton
+        source="nightscout"
+        windowStart={result.windowStart}
+        windowEnd={result.windowEnd}
+        gap={result.gap}
+      />
 
       {totalSkipped > 0 && (
         <details className="mt-2">
