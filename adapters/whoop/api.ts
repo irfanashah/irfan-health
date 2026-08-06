@@ -126,6 +126,31 @@ export async function ensureFreshToken(
   return tokens
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Fetch one Whoop page, retrying on 429 (rate limit). A full-history pull
+ * paginates 25 records at a time over three endpoints in parallel — easily
+ * ~60 pages/endpoint — which bursts past Whoop's per-minute limit and 429s
+ * (seen live on Reconcile). We honour `Retry-After` when present, else back
+ * off exponentially (1s→2s→4s→8s→16s, capped 30s), up to `maxRetries`. Only
+ * 429 is retried here; other non-OK statuses fall through to the caller.
+ */
+async function fetchWhoopPage(url: string, accessToken: string, maxRetries = 5): Promise<Response> {
+  let attempt = 0
+  for (;;) {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+    if (response.status !== 429 || attempt >= maxRetries) return response
+    const retryAfter = Number(response.headers.get('retry-after'))
+    const waitMs =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 60_000)
+        : Math.min(1000 * 2 ** attempt, 30_000)
+    await sleep(waitMs)
+    attempt++
+  }
+}
+
 /**
  * Fetch all pages from a Whoop paginated endpoint within a date window.
  */
@@ -145,14 +170,16 @@ async function fetchAllPages<T>(
     url.searchParams.set('limit', '25')
     if (nextToken) url.searchParams.set('nextToken', nextToken)
 
-    const response = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+    const response = await fetchWhoopPage(url.toString(), accessToken)
 
     if (!response.ok) {
       const text = await response.text()
+      const hint =
+        response.status === 429
+          ? ' — Whoop rate limit still hit after retries; wait a minute and try again (a full-history reconcile is request-heavy).'
+          : ''
       throw new Error(
-        `Whoop API ${url.pathname} failed (${response.status}): ${text.slice(0, 300)}`
+        `Whoop API ${url.pathname} failed (${response.status}): ${text.slice(0, 300)}${hint}`
       )
     }
 
