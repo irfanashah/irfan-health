@@ -175,7 +175,11 @@ export const MARKER_REGISTRY: MarkerDef[] = [
   { slug: 'deceleration_time', display: 'Deceleration time',  canonicalUnit: 'ms',  keyMarker: false, category: 'echo', convert: identity('ms') },
   { slug: 'ivrt',              display: 'IVRT',               canonicalUnit: 'ms',  keyMarker: false, category: 'echo', convert: identity('ms') },
   { slug: 'tr_pg',             display: 'TR peak gradient',   canonicalUnit: 'mmHg', keyMarker: false, category: 'echo', convert: identity('mmHg') },
+  // TR JET VELOCITY (m/s) is distinct from TR peak gradient (mmHg, = 4·v²) —
+  // some reports print the velocity, some the gradient; keep both slugs.
+  { slug: 'tr_vel',            display: 'TR jet velocity',    canonicalUnit: 'm/s', keyMarker: false, category: 'echo', convert: velocityConvert },
   { slug: 'rvsp',              display: 'RV systolic pressure (RVSP)', canonicalUnit: 'mmHg', keyMarker: false, category: 'echo', convert: identity('mmHg') },
+  { slug: 'av_opening',        display: 'Aortic valve opening', canonicalUnit: 'cm', keyMarker: false, category: 'echo', convert: dimensionConvert },
   { slug: 'fractional_shortening', display: 'Fractional shortening', canonicalUnit: '%', keyMarker: false, category: 'echo', convert: identity('%') },
 ]
 

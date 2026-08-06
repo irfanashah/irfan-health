@@ -77,6 +77,13 @@ describe('echo slugs resolve in the registry', () => {
     expect(markerCategory('ldl')).toBe('blood')
     expect(markerCategory('unmapped')).toBe('blood')
   })
+  it('tr_vel (m/s) and av_opening (cm) resolve as echo', () => {
+    expect(getMarker('tr_vel')?.category).toBe('echo')
+    expect(toCanonical('tr_vel', 2.09, 'm/s')).toEqual({ canonical_value: 2.09, canonical_unit: 'm/s' })
+    expect(getMarker('av_opening')?.category).toBe('echo')
+    expect(toCanonical('av_opening', 2.1, 'cm').canonical_value).toBe(2.1)
+    expect(toCanonical('av_opening', 21, 'mm').canonical_value).toBe(2.1) // mm → cm
+  })
   it('ECHO_SLUGS and blood markers are disjoint', () => {
     expect(ECHO_SLUGS).toContain('ef')
     expect(ECHO_SLUGS).not.toContain('ldl')

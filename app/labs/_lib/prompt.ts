@@ -106,8 +106,8 @@ An echo report lists cardiac measurements (M-Mode / 2D / Doppler) — treat each
   - Aortic root / AO / Aortic Root Diameter → aortic_root
   - LVOT → lvot ; TAPSE → tapse
   - Mitral E velocity → mv_e_vel ; Mitral A velocity → mv_a_vel ; E/A → e_a_ratio ; E/e′ (E/Ea, E/E') → e_e_prime
-  - Aortic valve velocity / AV Vmax → aortic_vel ; Deceleration time / Dec-T → deceleration_time ; IVRT → ivrt
-  - TR peak gradient / TR PG → tr_pg ; RV/PA pressure / RVSP / PASP → rvsp ; Fractional shortening / FS → fractional_shortening
+  - Aortic valve velocity / AV Vmax → aortic_vel ; Aortic opening / Aortic valve opening / cusp separation → av_opening ; Deceleration time / Dec-T → deceleration_time ; IVRT → ivrt
+  - TR peak gradient / TR PG → tr_pg ; TR jet velocity / TR Vmax → tr_vel ; RV/PA pressure / RVSP / PASP → rvsp ; Fractional shortening / FS → fractional_shortening
 - A measurement reported as a RANGE (e.g. EF "55–60%") → store its MIDPOINT in numeric_value (57.5), keep the original "55–60%" in text_value, and add a per-row note "reported as a range". A single number → store as-is.
 - QUALITATIVE FINDINGS ARE NOT MARKER ROWS. The findings/conclusion narrative — LV size + systolic function, LVH (concentric/eccentric), diastolic-dysfunction grade, RWMA / regional wall-motion, valve regurgitation grades (MR/AR/TR trace/mild/moderate), pericardial effusion — go into the PANEL notes field as a short summary. NEVER fabricate a number for a qualitative finding (do not turn "mild MR" into a value). (Ordinal grading of regurgitation for a numeric trend is out of scope for now.)
 - Proposed standard ranges (Job 2, only when the report didn't print one) — use these widely-accepted adult echo ranges, expressed in the CANONICAL unit (cm for dimensions): ef ≥55% (55–75); ivsd/lvpwd 0.6–1.2 cm; lvidd 3.5–5.6 cm; lvids 2.5–4.1 cm; la_diameter 1.5–4.0 cm; aortic_root 2.0–3.7 cm; tapse ≥1.7 cm; e_a_ratio 1–2; e_e_prime <8. If the report DID print a range (AFIC prints them, often in mm), keep it as the reported range in the printed unit (range_source='reported') — do not convert.
